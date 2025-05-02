@@ -1,0 +1,53 @@
+# Configuration file for Fresh SKU Substitution Analysis
+
+# Data settings
+data:
+  input_file: "data/raw/fresh_transactions.csv"
+  attributes_file: "data/raw/product_attributes.csv"
+  interim_dir: "data/interim/"
+  results_dir: "data/results/"
+  processed_dir: "data/processed/"
+  filter_sparse_items: true
+  min_days: 30
+
+# Analysis parameters
+analysis:
+  min_oos_days: 5
+  min_price_changes: 5
+  top_k: 5
+  weights:
+    oos: 0.5
+    price: 0.5
+  require_significance: true
+  use_elasticity: true
+  use_validation: true
+  
+# Price analysis
+price_analysis:
+  baseline_window: 30
+  min_baseline_periods: 7
+  discount_threshold: 0.05
+  
+# Elasticity analysis  
+elasticity:
+  min_data_points: 30
+  control_for_time: true
+  
+# Validation
+validation:
+  control_variables: true
+  use_time_controls: true
+  significance_level: 0.05
+  
+# Visualization
+visualization:
+  network_max_nodes: 50
+  network_min_score: 0.1
+  include_elasticity_viz: true
+  
+# Reporting
+reporting:
+  save_top_substitutes: true
+  generate_visualizations: true
+  detailed_reports: true
+  include_elasticity: true

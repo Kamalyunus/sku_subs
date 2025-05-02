@@ -1,0 +1,10 @@
+**/.claude/settings.local.json
+data/interim/*
+data/processed/*
+data/raw/*
+data/results/*
+logs/*
+reports/figures/*
+sku_subs/*
+.claude/*
+CLAUDE.md
