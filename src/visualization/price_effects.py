@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Visualizations for price effects between substitute products.
+Visualizations for effects between substitute products.
 """
 
 import pandas as pd
@@ -14,9 +14,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def visualize_price_effects(item_a, item_b, transactions_df, price_change_types, discount_df, output_path=None):
+def visualize_item_effects(item_a, item_b, transactions_df, price_change_types, discount_df, output_path=None):
     """
-    Visualize price effects between two items
+    Visualize price, OOS, and promo effects between two items
     
     Parameters:
     -----------
@@ -227,7 +227,7 @@ def visualize_price_effects(item_a, item_b, transactions_df, price_change_types,
 
 def visualize_top_pairs(substitutes_dict, transactions_df, price_change_types, discount_df, output_dir, max_pairs=10):
     """
-    Create price effect visualizations for top substitute pairs
+    Create effect visualizations for top substitute pairs
     
     Parameters:
     -----------
@@ -252,24 +252,24 @@ def visualize_top_pairs(substitutes_dict, transactions_df, price_change_types, d
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
-    logger.info(f"Creating price effect visualizations for top {max_pairs} substitute pairs")
+    logger.info(f"Creating effect visualizations for top {max_pairs} substitute pairs")
     
     # Get top pairs by combined score
     all_pairs = []
     for item_a, substitutes in substitutes_dict.items():
         for item_b, score, details in substitutes:
-            all_pairs.append((item_a, item_b, score))
+            all_pairs.append((item_a, item_b, score, details.get('dominant_factor', 'unknown')))
     
     # Sort by score and take top pairs
     all_pairs.sort(key=lambda x: x[2], reverse=True)
     top_pairs = all_pairs[:max_pairs]
     
     output_paths = []
-    for item_a, item_b, score in top_pairs:
-        output_path = os.path.join(output_dir, f"price_effect_{item_a}_{item_b}.png")
+    for item_a, item_b, score, dominant_factor in top_pairs:
+        output_path = os.path.join(output_dir, f"effects_{item_a}_{item_b}.png")
         
         # Create visualization
-        fig = visualize_price_effects(
+        fig = visualize_item_effects(
             item_a, item_b, 
             transactions_df, 
             price_change_types, 
@@ -281,5 +281,5 @@ def visualize_top_pairs(substitutes_dict, transactions_df, price_change_types, d
             output_paths.append(output_path)
             plt.close(fig)
     
-    logger.info(f"Created {len(output_paths)} price effect visualizations")
+    logger.info(f"Created {len(output_paths)} effect visualizations")
     return output_paths

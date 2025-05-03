@@ -9,16 +9,16 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 import logging
-from src.utils.validation import validate_substitution_with_controls
+from src.utils.validation import validate_substitution
 
 logger = logging.getLogger(__name__)
 
 
-def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo_df, items_list, 
-                                     min_oos_days=5, control_vars=None, product_attributes=None, 
-                                     substitution_scope="category"):
+def calculate_substitution_effects(sales_df, oos_df, price_df, promo_df, items_list, 
+                                   min_oos_days=5, control_vars=None, product_attributes=None, 
+                                   substitution_scope="category"):
     """
-    Calculate substitution effect using the enhanced validation framework
+    Calculate substitution effects (OOS, price, and promo) using a combined model
     
     Parameters:
     -----------
@@ -44,14 +44,23 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
     Returns:
     --------
     tuple
-        (substitution_matrix, significance_matrix, detailed_results)
+        (oos_matrix, oos_significance, price_matrix, price_significance,
+         promo_matrix, promo_significance, detailed_results)
     """
-    logger.info(f"Calculating OOS substitution with validation (min_oos_days={min_oos_days}, scope={substitution_scope})")
+    logger.info(f"Calculating substitution effects with combined model (min_oos_days={min_oos_days}, scope={substitution_scope})")
     
     from src.utils.helpers import check_substitution_scope
     
-    substitution_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
-    significance_matrix = pd.DataFrame(False, index=items_list, columns=items_list)
+    # Create matrices for different effects
+    oos_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
+    oos_significance = pd.DataFrame(False, index=items_list, columns=items_list)
+    
+    price_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
+    price_significance = pd.DataFrame(False, index=items_list, columns=items_list)
+    
+    promo_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
+    promo_significance = pd.DataFrame(False, index=items_list, columns=items_list)
+    
     detailed_results = {}
     
     item_count = len(items_list)
@@ -62,7 +71,7 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
     for item_a in items_list:
         processed += 1
         if processed % 10 == 0:
-            logger.info(f"OOS Validation: Processed {processed}/{item_count} items")
+            logger.info(f"Substitution Analysis: Processed {processed}/{item_count} items")
         
         # Skip if item not in OOS data
         if item_a not in oos_df.columns:
@@ -87,17 +96,32 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
                 
             pairs_evaluated += 1
             
-            # Use validation function from validation.py
-            result = validate_substitution_with_controls(
+            # Use combined validation function
+            result = validate_substitution(
                 sales_df, oos_df, price_df, promo_df, 
                 item_a, item_b, control_vars
             )
             
             detailed_results[item_a][item_b] = result
             
-            if result['validation_successful'] and result['oos_significant']:
-                substitution_matrix.loc[item_a, item_b] = result['oos_effect']
-                significance_matrix.loc[item_a, item_b] = True
+            if result['validation_successful']:
+                # Store OOS effects
+                if result['oos_significant']:
+                    oos_matrix.loc[item_a, item_b] = result['oos_effect']
+                    oos_significance.loc[item_a, item_b] = True
+                
+                # Store Price effects (elasticity)
+                if result['price_significant']:
+                    price_matrix.loc[item_a, item_b] = result['price_effect']
+                    price_significance.loc[item_a, item_b] = True
+                
+                # Store Promo effects
+                if result['promo_significant']:
+                    promo_matrix.loc[item_a, item_b] = result['promo_effect']
+                    promo_significance.loc[item_a, item_b] = True
     
-    logger.info(f"OOS substitution validation complete: evaluated {pairs_evaluated} pairs, skipped {pairs_skipped} pairs")
-    return substitution_matrix, significance_matrix, detailed_results
+    logger.info(f"Substitution analysis complete: evaluated {pairs_evaluated} pairs, skipped {pairs_skipped} pairs")
+    return (oos_matrix, oos_significance, 
+            price_matrix, price_significance,
+            promo_matrix, promo_significance,
+            detailed_results)

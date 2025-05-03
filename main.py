@@ -15,9 +15,9 @@ from src.data.load_data import load_transaction_data, load_product_attributes
 from src.data.preprocess import validate_and_preprocess
 from src.data.create_features import create_feature_set
 
-from src.analysis.oos_analysis import calculate_oos_substitution_with_validation
-from src.analysis.elasticity import calculate_elasticity_matrix
-from src.analysis.combined_score import find_top_substitutes, find_substitutes_with_validation
+from src.analysis.oos_analysis import calculate_substitution_effects
+from src.analysis.combined_score import find_substitutes_with_validation
+from src.analysis.price_analysis import add_interpretations
 
 from src.visualization.substitution_network import create_network_visualization
 from src.visualization.price_effects import visualize_top_pairs
@@ -221,16 +221,12 @@ def main(config_path, export_csv=False, verbose=False):
     for col in calendar_controls.columns:
         control_vars[col] = calendar_controls.reindex(control_vars.index.get_level_values('date'))[col].values
 
-    # All analysis uses validation and elasticity by default now
-    use_elasticity = True
-    use_validation = True
-    
     # Get substitution scope from config
     substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")
     
-    # Calculate OOS substitution effects
-    logger.info("Calculating OOS substitution effects with validation")
-    oos_matrix, oos_significance, oos_detailed = calculate_oos_substitution_with_validation(
+    # Calculate all substitution effects using the combined model
+    logger.info("Calculating substitution effects with combined model")
+    oos_matrix, oos_significance, price_matrix, price_significance, promo_matrix, promo_significance, detailed_results = calculate_substitution_effects(
         sales_pivot, 
         oos_pivot, 
         price_pivot, 
@@ -242,113 +238,62 @@ def main(config_path, export_csv=False, verbose=False):
         substitution_scope=substitution_scope
     )
     
-    # Calculate price effects using elasticity (only once)
-    logger.info("Calculating cross-price elasticity between items")
-    elasticity_matrix, elasticity_significance = calculate_elasticity_matrix(
-        sales_pivot, 
-        price_pivot, 
-        promo_pivot, 
-        items_list, 
-        control_vars, 
-        oos_pivot,
-        product_attributes=attributes_df,
-        substitution_scope=substitution_scope
-    )
-    
-    # Use the elasticity results for price effects
-    logger.info("Using elasticity as price effects")
-    price_matrix = elasticity_matrix
-    price_significance = elasticity_significance
-    
-    # Create a matrix for elasticity type (substitutes vs complements)
-    price_type = pd.DataFrame("none", index=items_list, columns=items_list)
+    # Create a matrix for price effect types (substitutes vs complements)
+    effect_type = pd.DataFrame("none", index=items_list, columns=items_list)
     for item_a in items_list:
         for item_b in items_list:
             if item_a == item_b:
                 continue
                 
-            if elasticity_matrix.loc[item_a, item_b] > 0:
-                price_type.loc[item_a, item_b] = "substitute"
-            elif elasticity_matrix.loc[item_a, item_b] < 0:
-                price_type.loc[item_a, item_b] = "complement"
+            if price_matrix.loc[item_a, item_b] > 0:
+                effect_type.loc[item_a, item_b] = "substitute"
+            elif price_matrix.loc[item_a, item_b] < 0:
+                effect_type.loc[item_a, item_b] = "complement"
     
-    # Store elasticity data for enhanced output
-    elasticity_data = {}
-    for item_a in items_list:
-        elasticity_data[item_a] = {}
-        for item_b in items_list:
-            if item_a != item_b:
-                elasticity_data[item_a][item_b] = {
-                    'elasticity': elasticity_matrix.loc[item_a, item_b],
-                    'significant': bool(elasticity_significance.loc[item_a, item_b])
-                }
-    
-    # Use sub_category substitution scope for maximum efficiency
-    substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")
-    logger.info(f"Using optimized substitution scope: {substitution_scope}")
+    # Add interpretations to detailed results
+    logger.info("Adding interpretations to detailed results")
+    for item_a in detailed_results:
+        for item_b in detailed_results[item_a]:
+            detailed_results[item_a][item_b] = add_interpretations(detailed_results[item_a][item_b])
     
     # Find top substitutes
-    logger.info("Finding top substitutes with combined effects")
-    if oos_detailed is not None:
-        # Use enhanced substitute finding with detailed validation results
-        logger.info("Using enhanced substitute finding with validation results")
-        substitutes_dict, combined_matrix, _ = find_substitutes_with_validation(
-            oos_detailed,
-            None,  # No detailed price results yet
-            elasticity_data,
-            k=config['analysis']['top_k'],
-            weights={
-                'oos': config['analysis']['weights']['oos'],
-                'price': config['analysis']['weights']['price']
-            },
-            require_significance=config['analysis']['require_significance'],
-            product_attributes=attributes_df,
-            substitution_scope=substitution_scope
-        )
-    else:
-        # Use standard substitute finding
-        substitutes_dict, combined_matrix = find_top_substitutes(
-            oos_matrix, 
-            oos_significance,
-            price_matrix, 
-            price_type, 
-            price_significance,
-            k=config['analysis']['top_k'],
-            weights={
-                'oos': config['analysis']['weights']['oos'],
-                'price': config['analysis']['weights']['price']
-            },
-            require_significance=config['analysis']['require_significance'],
-            elasticity_data=elasticity_data,
-            product_attributes=attributes_df,
-            substitution_scope=substitution_scope
-        )
+    logger.info("Finding top substitutes with combined model results")
+    
+    # Configure weights including promo weight
+    weights = {
+        'oos': config['analysis']['weights'].get('oos', 0.33),
+        'price': config['analysis']['weights'].get('price', 0.33),
+        'promo': config['analysis']['weights'].get('promo', 0.33)
+    }
+    
+    # Use substitute finding with combined model results
+    logger.info("Using substitute finding with combined model results")
+    substitutes_dict, combined_matrix, _ = find_substitutes_with_validation(
+        detailed_results,
+        k=config['analysis']['top_k'],
+        weights=weights,
+        require_significance=config['analysis']['require_significance'],
+        product_attributes=attributes_df,
+        substitution_scope=substitution_scope
+    )
     
     # Save results
     results_path = os.path.join(config['data']['results_dir'], 'substitution_results.pkl')
     logger.info(f"Saving substitution results to {results_path}")
     
-    # Prepare the results dictionary
+    # Prepare the results dictionary with combined model outputs
     results_dict = {
         'substitutes_dict': substitutes_dict,
         'combined_matrix': combined_matrix,
         'oos_matrix': oos_matrix,
-        'price_matrix': price_matrix,
-        'price_type': price_type,
         'oos_significance': oos_significance,
-        'price_significance': price_significance
+        'price_matrix': price_matrix,
+        'price_significance': price_significance,
+        'effect_type': effect_type,
+        'promo_matrix': promo_matrix,
+        'promo_significance': promo_significance,
+        'detailed_results': detailed_results
     }
-    
-    # Add enhanced results if available
-    if 'elasticity_matrix' in locals():
-        results_dict['elasticity_matrix'] = elasticity_matrix
-        results_dict['elasticity_significance'] = elasticity_significance
-        
-    if 'oos_detailed' in locals() and oos_detailed is not None:
-        results_dict['oos_detailed'] = oos_detailed
-        
-    if 'elasticity_data' in locals() and elasticity_data is not None:
-        results_dict['elasticity_data'] = elasticity_data
     
     # Save the results
     save_results(results_dict, results_path)
@@ -390,8 +335,10 @@ def main(config_path, export_csv=False, verbose=False):
             substitutes_dict,
             oos_matrix,
             price_matrix,
-            price_type,
-            output_dir=reports_dir
+            effect_type,
+            output_dir=reports_dir,
+            promo_matrix=promo_matrix,
+            promo_significance=promo_significance
         )
     
     logger.info("Analysis pipeline completed successfully")

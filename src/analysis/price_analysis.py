@@ -2,59 +2,76 @@
 # -*- coding: utf-8 -*-
 
 """
-Analysis of price effects using cross-price elasticity.
+Utilities for interpreting results from the combined model.
 """
 
 import pandas as pd
 import logging
-from src.analysis.elasticity import calculate_cross_price_elasticity
 
 logger = logging.getLogger(__name__)
 
-def analyze_individual_elasticity(sales_df, price_df, promo_df, item_a, item_b, control_vars=None, oos_df=None):
+def add_interpretations(result):
     """
-    Perform detailed elasticity analysis for a specific item pair
+    Add human-readable interpretations to combined model results
     
     Parameters:
     -----------
-    sales_df : DataFrame
-        Pivot table with sales data
-    price_df : DataFrame
-        Pivot table with price data
-    promo_df : DataFrame
-        Pivot table with promotion flags
-    item_a : str
-        Primary item
-    item_b : str
-        Potential substitute item
-    control_vars : DataFrame, optional
-        Control variables
-    oos_df : DataFrame, optional
-        Pivot table with OOS flags to control for availability
+    result : dict
+        Result dictionary from validate_substitution or detailed_results
         
     Returns:
     --------
     dict
-        Detailed elasticity results
+        The same result dictionary with added interpretations
     """
-    logger.info(f"Analyzing elasticity relationship between {item_a} and {item_b}")
+    if not result.get('validation_successful', False):
+        return result
     
-    result = calculate_cross_price_elasticity(
-        sales_df, price_df, promo_df, item_a, item_b, control_vars, oos_df
-    )
+    # Price elasticity interpretation
+    price_effect = result.get('price_effect', 0)
+    if price_effect > 0 and result.get('price_significant', False):
+        result['price_interpretation'] = "Substitute relationship (significant)"
+    elif price_effect > 0 and not result.get('price_significant', False):
+        result['price_interpretation'] = "Potential substitute (not significant)"
+    elif price_effect < 0 and result.get('price_significant', False):
+        result['price_interpretation'] = "Complement relationship (significant)"
+    elif price_effect < 0 and not result.get('price_significant', False):
+        result['price_interpretation'] = "Potential complement (not significant)"
+    else:
+        result['price_interpretation'] = "No price relationship detected"
     
-    # Add interpretation
-    if result['status'] == 'success':
-        elasticity = result['elasticity']
-        if elasticity > 0 and result['significant']:
-            result['interpretation'] = "Substitute relationship (significant)"
-        elif elasticity > 0 and not result['significant']:
-            result['interpretation'] = "Potential substitute (not significant)"
-        elif elasticity < 0 and result['significant']:
-            result['interpretation'] = "Complement relationship (significant)"
-        elif elasticity < 0 and not result['significant']:
-            result['interpretation'] = "Potential complement (not significant)"
-        else:
-            result['interpretation'] = "No relationship detected"
+    # OOS effect interpretation
+    oos_effect = result.get('oos_effect', 0)
+    if oos_effect > 0 and result.get('oos_significant', False):
+        result['oos_interpretation'] = "Strong substitution (significant)"
+    elif oos_effect > 0 and not result.get('oos_significant', False):
+        result['oos_interpretation'] = "Weak substitution (not significant)"
+    elif oos_effect < 0 and result.get('oos_significant', False):
+        result['oos_interpretation'] = "Cannibalization (significant)"
+    elif oos_effect < 0 and not result.get('oos_significant', False):
+        result['oos_interpretation'] = "Potential cannibalization (not significant)"
+    else:
+        result['oos_interpretation'] = "No OOS relationship detected"
+    
+    # Promo effect interpretation
+    promo_effect = result.get('promo_effect', 0)
+    if promo_effect < 0 and result.get('promo_significant', False):  # Negative for cannibalization
+        result['promo_interpretation'] = "Strong cannibalization (significant)"
+    elif promo_effect < 0 and not result.get('promo_significant', False):
+        result['promo_interpretation'] = "Weak cannibalization (not significant)"
+    elif promo_effect > 0 and result.get('promo_significant', False):
+        result['promo_interpretation'] = "Halo effect (significant)"
+    elif promo_effect > 0 and not result.get('promo_significant', False):
+        result['promo_interpretation'] = "Potential halo effect (not significant)"
+    else:
+        result['promo_interpretation'] = "No promotion relationship detected"
+    
+    # Overall relationship categorization
+    if (result.get('price_significant', False) and price_effect > 0) or (result.get('oos_significant', False) and oos_effect > 0):
+        result['relationship_type'] = "Substitute"
+    elif (result.get('price_significant', False) and price_effect < 0) or (result.get('promo_significant', False) and promo_effect < 0):
+        result['relationship_type'] = "Complement"
+    else:
+        result['relationship_type'] = "Undefined"
     
     return result

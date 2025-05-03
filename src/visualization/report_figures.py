@@ -14,9 +14,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_report_figures(substitutes_dict, oos_matrix, price_matrix, price_type, output_dir):
+def generate_report_figures(substitutes_dict, oos_matrix, price_matrix, effect_type, output_dir, 
+                       promo_matrix, promo_significance):
     """
-    Generate figures for the final report
+    Generate figures for the final report using combined model outputs
     
     Parameters:
     -----------
@@ -25,11 +26,15 @@ def generate_report_figures(substitutes_dict, oos_matrix, price_matrix, price_ty
     oos_matrix : DataFrame
         OOS substitution effect matrix
     price_matrix : DataFrame
-        Price effect matrix
-    price_type : DataFrame
-        Matrix indicating price effect types
+        Price effect matrix (elasticity)
+    effect_type : DataFrame
+        Matrix indicating effect types (substitute/complement)
     output_dir : str
         Output directory for figures
+    promo_matrix : DataFrame
+        Promotion effect matrix from combined model
+    promo_significance : DataFrame
+        Promotion significance matrix
         
     Returns:
     --------
@@ -174,33 +179,87 @@ def generate_report_figures(substitutes_dict, oos_matrix, price_matrix, price_ty
     
     generated_figures.append(output_path)
     
-    # Figure 4: Price effect type breakdown
-    logger.info("Generating price effect type figure")
+    # Add promo effects heatmap if available
+    if promo_matrix is not None:
+        logger.info("Generating promotion effect heatmap figure")
+        
+        # Get top items by row sum of promo effects
+        top_promo_items = promo_matrix.abs().sum(axis=1).sort_values(ascending=False).head(15).index
+        
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(promo_matrix.loc[top_promo_items, top_promo_items], 
+                    annot=False, cmap='RdBu_r', cbar=True)
+        plt.title('Promotion Effect Heatmap (Top 15 Items)')
+        plt.tight_layout()
+        
+        output_path = os.path.join(output_dir, 'promo_heatmap.png')
+        plt.savefig(output_path, dpi=300)
+        plt.close()
+        
+        generated_figures.append(output_path)
     
-    # Count by price effect type
-    price_type_flat = price_type.values.flatten()
-    price_type_counts = pd.Series(price_type_flat).value_counts()
+    # Figure 4: Effect type breakdown
+    logger.info("Generating effect type figure")
+    
+    # Count by effect type
+    effect_type_flat = effect_type.values.flatten()
+    effect_type_counts = pd.Series(effect_type_flat).value_counts()
     
     # Remove 'none' category if present
-    if 'none' in price_type_counts:
-        price_type_counts = price_type_counts.drop('none')
+    if 'none' in effect_type_counts:
+        effect_type_counts = effect_type_counts.drop('none')
     
     # Ensure index is categorical to avoid matplotlib warning
-    price_type_counts.index = price_type_counts.index.astype('category')
+    effect_type_counts.index = effect_type_counts.index.astype('category')
     
     plt.figure(figsize=(10, 6))
-    ax = sns.barplot(x=price_type_counts.index, y=price_type_counts.values)
+    ax = sns.barplot(x=effect_type_counts.index, y=effect_type_counts.values)
     
     # Add percentages on top of bars
-    total = price_type_counts.sum()
-    for i, count in enumerate(price_type_counts):
+    total = effect_type_counts.sum()
+    for i, count in enumerate(effect_type_counts):
         ax.text(i, count + 0.1, f'{count/total:.1%}', ha='center')
     
-    plt.title('Price Effect Types in Substitution Relationships')
-    plt.xlabel('Price Effect Type')
+    plt.title('Effect Types in Substitution Relationships')
+    plt.xlabel('Effect Type')
     plt.ylabel('Count')
     
-    output_path = os.path.join(output_dir, 'price_effect_types.png')
+    output_path = os.path.join(output_dir, 'effect_types.png')
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+    
+    generated_figures.append(output_path)
+    
+    # Add figure for promo effects
+    logger.info("Generating promo effect summary figure")
+    
+    # Count promo effect categories
+    cannibalization_sig = ((promo_matrix < 0) & promo_significance).sum().sum()
+    cannibalization_nonsig = ((promo_matrix < 0) & ~promo_significance).sum().sum()
+    halo_sig = ((promo_matrix > 0) & promo_significance).sum().sum()
+    halo_nonsig = ((promo_matrix > 0) & ~promo_significance).sum().sum()
+    
+    # Create data for plotting
+    categories = ['Cannibalization\n(Significant)', 'Potential\nCannibalization', 
+                  'Halo Effect\n(Significant)', 'Potential\nHalo Effect']
+    counts = [cannibalization_sig, cannibalization_nonsig, halo_sig, halo_nonsig]
+    
+    plt.figure(figsize=(10, 6))
+    ax = sns.barplot(x=categories, y=counts)
+    
+    # Add percentages on top of bars
+    total = sum(counts)
+    if total > 0:  # Avoid division by zero
+        for i, count in enumerate(counts):
+            if count > 0:  # Only add text if there's a value
+                ax.text(i, count + 0.1, f'{count/total:.1%}', ha='center')
+    
+    plt.title('Promotion Effects in Item Relationships')
+    plt.xlabel('Promotion Effect Type')
+    plt.ylabel('Count')
+    plt.tight_layout()
+    
+    output_path = os.path.join(output_dir, 'promo_effect_types.png')
     plt.savefig(output_path, dpi=300)
     plt.close()
     
