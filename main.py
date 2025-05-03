@@ -16,7 +16,6 @@ from src.data.preprocess import validate_and_preprocess
 from src.data.create_features import create_feature_set
 
 from src.analysis.oos_analysis import calculate_oos_substitution_with_validation
-from src.analysis.price_analysis import calculate_price_effects
 from src.analysis.elasticity import calculate_elasticity_matrix
 from src.analysis.combined_score import find_top_substitutes, find_substitutes_with_validation
 
@@ -238,36 +237,39 @@ def main(config_path, export_csv=False, verbose=False):
         control_vars=control_vars
     )
     
-    # Calculate price effects using elasticity
-    logger.info("Calculating price effects using elasticity")
-    price_matrix, price_type, price_significance = calculate_price_effects(
-        sales_pivot, 
-        price_pivot, 
-        promo_pivot, 
-        price_change_types,
-        items_list, 
-        control_vars=control_vars,
-        oos_df=oos_pivot  # Add OOS data for controlling availability effects
+    # Calculate price effects using elasticity (only once)
+    logger.info("Calculating cross-price elasticity between items")
+    elasticity_matrix, elasticity_significance = calculate_elasticity_matrix(
+        sales_pivot, price_pivot, promo_pivot, items_list, control_vars, oos_pivot
     )
     
-    # Calculate elasticity directly if needed
-    elasticity_data = None
-    if use_elasticity:
-        logger.info("Calculating cross-price elasticity between items")
-        elasticity_matrix, elasticity_significance = calculate_elasticity_matrix(
-            sales_pivot, price_pivot, promo_pivot, items_list, control_vars, oos_pivot
-        )
-        
-        # Store elasticity data for enhanced output
-        elasticity_data = {}
-        for item_a in items_list:
-            elasticity_data[item_a] = {}
-            for item_b in items_list:
-                if item_a != item_b:
-                    elasticity_data[item_a][item_b] = {
-                        'elasticity': elasticity_matrix.loc[item_a, item_b],
-                        'significant': bool(elasticity_significance.loc[item_a, item_b])
-                    }
+    # Use the elasticity results for price effects
+    logger.info("Using elasticity as price effects")
+    price_matrix = elasticity_matrix
+    price_significance = elasticity_significance
+    
+    # Create a matrix for elasticity type (substitutes vs complements)
+    price_type = pd.DataFrame("none", index=items_list, columns=items_list)
+    for item_a in items_list:
+        for item_b in items_list:
+            if item_a == item_b:
+                continue
+                
+            if elasticity_matrix.loc[item_a, item_b] > 0:
+                price_type.loc[item_a, item_b] = "substitute"
+            elif elasticity_matrix.loc[item_a, item_b] < 0:
+                price_type.loc[item_a, item_b] = "complement"
+    
+    # Store elasticity data for enhanced output
+    elasticity_data = {}
+    for item_a in items_list:
+        elasticity_data[item_a] = {}
+        for item_b in items_list:
+            if item_a != item_b:
+                elasticity_data[item_a][item_b] = {
+                    'elasticity': elasticity_matrix.loc[item_a, item_b],
+                    'significant': bool(elasticity_significance.loc[item_a, item_b])
+                }
     
     # Use sub_category substitution scope for maximum efficiency
     substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")

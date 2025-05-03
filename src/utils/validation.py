@@ -58,6 +58,17 @@ def validate_substitution_with_controls(sales_df, oos_df, price_df, promo_df,
         
     if item_b in promo_df.columns:
         analysis_df['promo_b'] = promo_df[item_b]  # Control for item B's own promotions
+        
+    # Add OOS status for item B to control for its availability
+    if item_b in oos_df.columns:
+        analysis_df['oos_b'] = oos_df[item_b]
+        
+    # Add interaction terms between price and OOS
+    if 'price_a' in analysis_df.columns and 'oos_a' in analysis_df.columns:
+        analysis_df['price_a_x_oos_a'] = analysis_df['price_a'] * analysis_df['oos_a']
+        
+    if 'price_b' in analysis_df.columns and 'oos_b' in analysis_df.columns:
+        analysis_df['price_b_x_oos_b'] = analysis_df['price_b'] * analysis_df['oos_b']
     
     # Add any additional control variables
     if control_vars is not None:
@@ -130,6 +141,19 @@ def validate_substitution_with_controls(sales_df, oos_df, price_df, promo_df,
                 
             if 'promo_b' in analysis_df.columns:
                 price_formula += ' + promo_b'
+                
+            # Add OOS controls and interaction terms
+            if 'oos_a' in analysis_df.columns:
+                price_formula += ' + oos_a'
+                
+            if 'oos_b' in analysis_df.columns:
+                price_formula += ' + oos_b'
+                
+            if 'price_a_x_oos_a' in analysis_df.columns:
+                price_formula += ' + price_a_x_oos_a'
+                
+            if 'price_b_x_oos_b' in analysis_df.columns:
+                price_formula += ' + price_b_x_oos_b'
                 
             # Add control variables if present
             if control_vars is not None:
