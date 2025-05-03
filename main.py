@@ -12,8 +12,8 @@ import logging
 from datetime import datetime
 
 from src.data.load_data import load_transaction_data, load_product_attributes
-from src.data.preprocess import preprocess_transactions
-from src.data.create_features import create_pivots, separate_price_changes
+from src.data.preprocess import validate_and_preprocess
+from src.data.create_features import create_feature_set
 
 from src.analysis.oos_analysis import calculate_oos_substitution, calculate_oos_substitution_with_validation
 from src.analysis.price_analysis import calculate_price_effects
@@ -24,7 +24,7 @@ from src.visualization.substitution_network import create_network_visualization
 from src.visualization.price_effects import visualize_top_pairs
 from src.visualization.report_figures import generate_report_figures
 
-from src.utils.helpers import load_config, ensure_dir, save_results, calculate_timestamp_features, filter_sparse_items, detect_data_anomalies
+from src.utils.helpers import load_config, ensure_dir, save_results, filter_sparse_items
 from src.utils.export_results import export_to_csv
 
 def setup_logging(verbose=False):
@@ -85,9 +85,9 @@ def main(config_path, export_csv=False, verbose=False):
     ensure_dir(config['data']['interim_dir'])
     ensure_dir(config['data']['results_dir'])
     
-    # Load and preprocess data
+    # Load data
     logger.info("Loading transaction data")
-    transactions_df = load_transaction_data(config['data']['input_file'])
+    raw_transactions_df = load_transaction_data(config['data']['input_file'])
     
     logger.info("Loading product attributes")
     try:
@@ -96,12 +96,10 @@ def main(config_path, export_csv=False, verbose=False):
         logger.warning("Product attributes file not found, continuing without attributes")
         attributes_df = None
     
-    logger.info("Preprocessing transaction data")
-    transactions_df = preprocess_transactions(transactions_df)
+    # Run consolidated preprocessing and anomaly detection
+    logger.info("Running consolidated preprocessing and anomaly detection")
+    transactions_df, anomalies = validate_and_preprocess(raw_transactions_df)
     
-    # Check for data anomalies
-    logger.info("Checking for data anomalies")
-    anomalies = detect_data_anomalies(transactions_df)
     if anomalies:
         logger.warning(f"Detected {len(anomalies)} types of anomalies in the data")
         
@@ -114,39 +112,33 @@ def main(config_path, export_csv=False, verbose=False):
             min_days=min_days
         )
     
-    # Add timestamp features for potential use as control variables
-    transactions_df = calculate_timestamp_features(transactions_df)
-    
-    # Create features and pivots
-    logger.info("Creating pivot tables")
-    sales_pivot, price_pivot, promo_pivot, oos_pivot, control_pivot = create_pivots(
-        transactions_df
-    )
-    
     # Get list of items to analyze
-    items_list = sales_pivot.columns.tolist()
+    items_list = transactions_df['item_id'].unique().tolist()
     logger.info(f"Analyzing {len(items_list)} unique fresh SKUs")
     
-    # Save interim data
-    interim_path = os.path.join(config['data']['interim_dir'], 'pivot_tables.pkl')
-    logger.info(f"Saving pivot tables to {interim_path}")
-    save_results({
-        'sales_pivot': sales_pivot,
-        'price_pivot': price_pivot,
-        'promo_pivot': promo_pivot,
-        'oos_pivot': oos_pivot,
-        'control_pivot': control_pivot
-    }, interim_path)
-    
-    # Separate price changes into promotion vs price matching
-    logger.info("Analyzing price change patterns")
-    price_change_types, discount_df = separate_price_changes(
+    # Create all features and pivots in one pass
+    logger.info("Creating all features and pivots in a single pass")
+    feature_set = create_feature_set(
         transactions_df, 
         items_list,
         baseline_window=config['price_analysis']['baseline_window'],
         min_periods=config['price_analysis']['min_baseline_periods'],
         discount_threshold=config['price_analysis']['discount_threshold']
     )
+    
+    # Extract required data for analysis
+    sales_pivot = feature_set['sales_pivot']
+    price_pivot = feature_set['price_pivot']
+    promo_pivot = feature_set['promo_pivot']
+    oos_pivot = feature_set['oos_pivot']
+    control_pivot = feature_set['control_pivot']
+    price_change_types = feature_set['price_change_types']
+    discount_df = feature_set['discount_df']
+    
+    # Save interim data
+    interim_path = os.path.join(config['data']['interim_dir'], 'pivot_tables.pkl')
+    logger.info(f"Saving pivot tables to {interim_path}")
+    save_results(feature_set, interim_path)
     
     # Create enhanced control variables for regression analyses - always at national level
     # We already have basic control variables in the control_pivot

@@ -38,15 +38,10 @@ def visualize_price_effects(item_a, item_b, transactions_df, price_change_types,
     """
     logger.info(f"Creating price effect visualization for {item_a} -> {item_b}")
     
-    # Extract daily sales and price data
-    daily_data = transactions_df.groupby(['date', 'item_id']).agg({
-        'sales': 'sum',
-        'price': 'mean'
-    }).reset_index()
-    
+    # Use transaction data directly as it's already at date-item level
     # Get data for the two items
-    df_a = daily_data[daily_data['item_id'] == item_a].set_index('date')
-    df_b = daily_data[daily_data['item_id'] == item_b].set_index('date')
+    df_a = transactions_df[transactions_df['item_id'] == item_a].set_index('date')[['sales', 'price']]
+    df_b = transactions_df[transactions_df['item_id'] == item_b].set_index('date')[['sales', 'price']]
     
     # Skip if we don't have data for both items
     if df_a.empty or df_b.empty:

@@ -8,3 +8,7 @@ reports/figures/*
 sku_subs/*
 .claude/*
 CLAUDE.md
+src/data/__pycache__/*
+src/visualization/__pycache__/*
+src/utils/__pycache__/*
+src/__pycache__/*
