@@ -27,24 +27,40 @@ from src.visualization.report_figures import generate_report_figures
 from src.utils.helpers import load_config, ensure_dir, save_results, calculate_timestamp_features, filter_sparse_items, detect_data_anomalies
 from src.utils.export_results import export_to_csv
 
-def setup_logging():
-    """Set up logging configuration"""
+def setup_logging(verbose=False):
+    """
+    Set up logging configuration with minimal logging by default
+    
+    Parameters:
+    -----------
+    verbose : bool
+        If True, enable INFO level logging, otherwise use WARNING level
+    """
     log_dir = "logs"
     ensure_dir(log_dir)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = os.path.join(log_dir, f"fresh_substitution_{timestamp}.log")
     
+    # Set log level based on verbose flag
+    log_level = logging.INFO if verbose else logging.WARNING
+    
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - %(message)s',
         handlers=[
             logging.FileHandler(log_file),
             logging.StreamHandler()
         ]
     )
+    
+    # Log the current logging level
+    if verbose:
+        logging.info("Verbose logging enabled (INFO level)")
+    else:
+        logging.warning("Minimal logging enabled (WARNING level)")
 
-def main(config_path, export_csv=False):
+def main(config_path, export_csv=False, verbose=False):
     """
     Main function to run the full pipeline
     
@@ -54,9 +70,11 @@ def main(config_path, export_csv=False):
         Path to configuration file
     export_csv : bool
         Whether to export results to CSV format
+    verbose : bool
+        Enable verbose logging (INFO level) if True
     """
     # Set up logging
-    setup_logging()
+    setup_logging(verbose)
     logger = logging.getLogger(__name__)
     logger.info("Starting Fresh SKU Substitution Analysis")
     
@@ -409,6 +427,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run Fresh SKU Substitution Analysis')
     parser.add_argument('--config', default='config.yaml', help='Path to config file')
     parser.add_argument('--csv', action='store_true', help='Export results to CSV format')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose logging (INFO level)')
     args = parser.parse_args()
     
-    main(args.config, export_csv=args.csv)
+    main(args.config, export_csv=args.csv, verbose=args.verbose)
