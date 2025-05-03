@@ -15,7 +15,7 @@ from src.data.load_data import load_transaction_data, load_product_attributes
 from src.data.preprocess import validate_and_preprocess
 from src.data.create_features import create_feature_set
 
-from src.analysis.oos_analysis import calculate_oos_substitution, calculate_oos_substitution_with_validation
+from src.analysis.oos_analysis import calculate_oos_substitution_with_validation
 from src.analysis.price_analysis import calculate_price_effects
 from src.analysis.elasticity import calculate_elasticity_matrix
 from src.analysis.combined_score import find_top_substitutes, find_substitutes_with_validation
@@ -222,46 +222,31 @@ def main(config_path, export_csv=False, verbose=False):
     for col in calendar_controls.columns:
         control_vars[col] = calendar_controls.reindex(control_vars.index.get_level_values('date'))[col].values
 
-    # Create a parameter to control which analysis methods to use
-    use_elasticity = config.get('analysis', {}).get('use_elasticity', True)
-    use_validation = config.get('analysis', {}).get('use_validation', True)
+    # All analysis uses validation and elasticity by default now
+    use_elasticity = True
+    use_validation = True
     
     # Calculate OOS substitution effects
-    logger.info("Calculating OOS substitution effects")
-    if use_validation and promo_pivot is not None:
-        logger.info("Using enhanced validation for OOS analysis")
-        oos_matrix, oos_significance, oos_detailed = calculate_oos_substitution_with_validation(
-            sales_pivot, 
-            oos_pivot, 
-            price_pivot, 
-            promo_pivot,
-            items_list, 
-            min_oos_days=config['analysis']['min_oos_days'],
-            control_vars=control_vars
-        )
-    else:
-        oos_matrix, oos_significance = calculate_oos_substitution(
-            sales_pivot, 
-            oos_pivot, 
-            price_pivot, 
-            items_list, 
-            min_oos_days=config['analysis']['min_oos_days'],
-            control_vars=control_vars,
-            promo_df=promo_pivot
-        )
-        oos_detailed = None
+    logger.info("Calculating OOS substitution effects with validation")
+    oos_matrix, oos_significance, oos_detailed = calculate_oos_substitution_with_validation(
+        sales_pivot, 
+        oos_pivot, 
+        price_pivot, 
+        promo_pivot,
+        items_list, 
+        min_oos_days=config['analysis']['min_oos_days'],
+        control_vars=control_vars
+    )
     
-    # Calculate price effects
-    logger.info("Calculating price effects (promotion and price matching)")
+    # Calculate price effects using elasticity
+    logger.info("Calculating price effects using elasticity")
     price_matrix, price_type, price_significance = calculate_price_effects(
         sales_pivot, 
         price_pivot, 
         promo_pivot, 
         price_change_types,
         items_list, 
-        min_price_changes=config['analysis']['min_price_changes'],
         control_vars=control_vars,
-        use_elasticity=use_elasticity,
         oos_df=oos_pivot  # Add OOS data for controlling availability effects
     )
     
@@ -284,9 +269,9 @@ def main(config_path, export_csv=False, verbose=False):
                         'significant': bool(elasticity_significance.loc[item_a, item_b])
                     }
     
-    # Get substitution scope from config
-    substitution_scope = config.get('analysis', {}).get('substitution_scope', "category")
-    logger.info(f"Using substitution scope: {substitution_scope}")
+    # Use sub_category substitution scope for maximum efficiency
+    substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")
+    logger.info(f"Using optimized substitution scope: {substitution_scope}")
     
     # Find top substitutes
     logger.info("Finding top substitutes with combined effects")
