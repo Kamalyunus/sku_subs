@@ -13,14 +13,11 @@ data:
 # Analysis parameters
 analysis:
   min_oos_days: 5
-  min_price_changes: 5
   top_k: 5
   weights:
     oos: 0.5
     price: 0.5
   require_significance: true
-  use_elasticity: true
-  use_validation: true
   substitution_scope: "category"  # Options: "category", "sub_category", "all"
   
 # Price analysis
@@ -32,13 +29,12 @@ price_analysis:
 # Elasticity analysis  
 elasticity:
   min_data_points: 30
-  control_for_time: true
+  filter_oos_periods: true  # Filter periods where items are out of stock for elasticity calculation
   
 # Validation
 validation:
-  control_variables: true
-  use_time_controls: true
   significance_level: 0.05
+  include_oos_interactions: true  # Include interaction terms between price and OOS variables
   
 # Visualization
 visualization:

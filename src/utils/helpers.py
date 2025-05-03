@@ -122,3 +122,51 @@ def filter_sparse_items(transactions_df, min_days=30):
     logger.info(f"Retained {len(filtered_df)/len(transactions_df):.1%} of transaction records")
     
     return filtered_df, valid_items
+
+def check_substitution_scope(item_a, item_b, product_attributes, substitution_scope="category"):
+    """
+    Check if two items are within the same substitution scope (category or subcategory)
+    
+    Parameters:
+    -----------
+    item_a : str
+        First item ID
+    item_b : str
+        Second item ID
+    product_attributes : DataFrame
+        DataFrame with product attribute data, must have 'item_id' column
+    substitution_scope : str
+        Scope for substitution filtering: "category", "sub_category", or "all"
+        
+    Returns:
+    --------
+    bool
+        True if items are in same category/subcategory (based on scope), False otherwise
+    """
+    # If no filtering or no attributes data, all pairs are valid
+    if substitution_scope == "all" or product_attributes is None:
+        return True
+    
+    # Make sure both items exist in attributes
+    item_a_exists = item_a in product_attributes['item_id'].values
+    item_b_exists = item_b in product_attributes['item_id'].values
+    
+    if not (item_a_exists and item_b_exists):
+        return False
+    
+    # Get attributes for each item
+    item_a_attr = product_attributes[product_attributes['item_id'] == item_a].iloc[0]
+    item_b_attr = product_attributes[product_attributes['item_id'] == item_b].iloc[0]
+    
+    # Check if they're in the same category/subcategory
+    if substitution_scope == "category":
+        if 'category' not in item_a_attr or 'category' not in item_b_attr:
+            return False
+        return item_a_attr['category'] == item_b_attr['category']
+    
+    elif substitution_scope == "sub_category":
+        if 'sub_category' not in item_a_attr or 'sub_category' not in item_b_attr:
+            return False
+        return item_a_attr['sub_category'] == item_b_attr['sub_category']
+    
+    return True

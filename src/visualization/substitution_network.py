@@ -80,8 +80,10 @@ def create_network_visualization(substitutes_dict, min_score=0.1, max_nodes=50):
     factor_colors = {
         'availability': 'blue',
         'promotion': 'green',
-        'price_matching': 'orange',
+        'discount': 'orange',
         'elasticity': 'purple',
+        'elasticity_substitute': 'magenta',
+        'elasticity_complement': 'red',
         'unknown': 'gray'
     }
     

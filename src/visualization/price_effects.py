@@ -132,8 +132,8 @@ def visualize_price_effects(item_a, item_b, transactions_df, price_change_types,
     # Create color mapping
     colors = {
         'normal': 'gray',
+        'discount': 'orange',
         'promotion': 'green',
-        'price_matching': 'orange',
         'unknown': 'blue'
     }
     

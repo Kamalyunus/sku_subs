@@ -192,7 +192,8 @@ def calculate_cross_price_elasticity(sales_df, price_df, promo_df, item_a, item_
             'error_message': str(e)
         }
 
-def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, control_vars=None, oos_df=None):
+def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, control_vars=None, 
+                           oos_df=None, product_attributes=None, substitution_scope="category"):
     """
     Calculate cross-price elasticity matrix for multiple items
     
@@ -210,6 +211,10 @@ def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, contro
         Control variables
     oos_df : DataFrame, optional
         Pivot table with OOS flags (0/1), used to filter out OOS periods
+    product_attributes : DataFrame, optional
+        Product attributes data with category/subcategory information
+    substitution_scope : str, optional
+        Scope for substitution filtering: "category", "sub_category", or "all"
         
     Returns:
     --------
@@ -218,7 +223,9 @@ def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, contro
     DataFrame
         Matrix indicating significance of elasticities
     """
-    logger.info(f"Calculating elasticity matrix for {len(items_list)} items")
+    logger.info(f"Calculating elasticity matrix for {len(items_list)} items with scope={substitution_scope}")
+    
+    from src.utils.helpers import check_substitution_scope
     
     # Create matrices with explicit data types
     elasticity_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
@@ -226,6 +233,8 @@ def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, contro
     
     item_count = len(items_list)
     processed = 0
+    pairs_evaluated = 0
+    pairs_skipped = 0
     
     for item_a in items_list:
         processed += 1
@@ -235,6 +244,13 @@ def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, contro
         for item_b in items_list:
             if item_a == item_b:
                 continue
+            
+            # Skip if not in same category/subcategory based on substitution scope
+            if not check_substitution_scope(item_a, item_b, product_attributes, substitution_scope):
+                pairs_skipped += 1
+                continue
+                
+            pairs_evaluated += 1
                 
             result = calculate_cross_price_elasticity(
                 sales_df, price_df, promo_df,
@@ -247,5 +263,5 @@ def calculate_elasticity_matrix(sales_df, price_df, promo_df, items_list, contro
                 # Ensure we're explicitly setting boolean values for significance
                 significance_matrix.loc[item_a, item_b] = bool(result['significant'])
     
-    logger.info("Elasticity matrix calculation complete")
+    logger.info(f"Elasticity matrix calculation complete: evaluated {pairs_evaluated} pairs, skipped {pairs_skipped} pairs")
     return elasticity_matrix, significance_matrix

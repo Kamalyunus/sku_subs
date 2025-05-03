@@ -153,16 +153,16 @@ def create_feature_set(transactions_df, items_list, baseline_window=30, min_peri
         # Calculate percent discount from baseline
         discount = (baseline - item_prices) / baseline
         
-        # Categorize price changes
+        # Simplify price change categorization - we now rely on elasticity instead
         change_type = pd.Series("normal", index=item_prices.index)
         
-        # Promotion: on promotion flag and at least discount_threshold discount
-        promo_mask = (item_promos == 1) & (discount >= discount_threshold)
-        change_type[promo_mask] = "promotion"
+        # Mark any significant price change, regardless of whether it's a promotion or not
+        discount_mask = discount >= discount_threshold
+        change_type[discount_mask] = "discount"
         
-        # Price matching: not on promotion but at least discount_threshold discount
-        matching_mask = (item_promos == 0) & (discount >= discount_threshold)
-        change_type[matching_mask] = "price_matching"
+        # If promotion flag is set, mark as promotion
+        promo_mask = item_promos == 1
+        change_type[promo_mask] = "promotion"
         
         # Store results
         price_change_types[item] = change_type
@@ -258,7 +258,10 @@ def create_pivots(transactions_df):
 
 def separate_price_changes(transactions_df, items_list, baseline_window=30, min_periods=7, discount_threshold=0.05):
     """
-    Separate price changes into promotional discounts vs. competitive price matching
+    Separate price changes into different categories (normal, discount, promotion)
+    
+    NOTE: This function is maintained for backward compatibility.
+    For new development, elasticity-based calculations are preferred over simple price change categorization.
     
     Parameters:
     -----------
@@ -280,7 +283,7 @@ def separate_price_changes(transactions_df, items_list, baseline_window=30, min_
     DataFrame
         Discount percentages from baseline
     """
-    logger.info("Separating price changes into promotion vs. price matching")
+    logger.info("Separating price changes into normal, discount and promotion")
     
     # Use transaction data directly as it's already at date-item level
     daily_prices = transactions_df[['date', 'item_id', 'price', 'is_on_promotion']]
@@ -320,16 +323,16 @@ def separate_price_changes(transactions_df, items_list, baseline_window=30, min_
         # Calculate percent discount from baseline
         discount = (baseline - item_prices) / baseline
         
-        # Categorize price changes
+        # Simplify price change categorization - we now rely on elasticity instead
         change_type = pd.Series("normal", index=item_prices.index)
         
-        # Promotion: on promotion flag and at least discount_threshold discount
-        promo_mask = (item_promos == 1) & (discount >= discount_threshold)
-        change_type[promo_mask] = "promotion"
+        # Mark any significant price change, regardless of whether it's a promotion or not
+        discount_mask = discount >= discount_threshold
+        change_type[discount_mask] = "discount"
         
-        # Price matching: not on promotion but at least discount_threshold discount
-        matching_mask = (item_promos == 0) & (discount >= discount_threshold)
-        change_type[matching_mask] = "price_matching"
+        # If promotion flag is set, mark as promotion
+        promo_mask = item_promos == 1
+        change_type[promo_mask] = "promotion"
         
         # Store results
         price_change_types[item] = change_type

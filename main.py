@@ -225,6 +225,9 @@ def main(config_path, export_csv=False, verbose=False):
     use_elasticity = True
     use_validation = True
     
+    # Get substitution scope from config
+    substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")
+    
     # Calculate OOS substitution effects
     logger.info("Calculating OOS substitution effects with validation")
     oos_matrix, oos_significance, oos_detailed = calculate_oos_substitution_with_validation(
@@ -234,13 +237,22 @@ def main(config_path, export_csv=False, verbose=False):
         promo_pivot,
         items_list, 
         min_oos_days=config['analysis']['min_oos_days'],
-        control_vars=control_vars
+        control_vars=control_vars,
+        product_attributes=attributes_df,
+        substitution_scope=substitution_scope
     )
     
     # Calculate price effects using elasticity (only once)
     logger.info("Calculating cross-price elasticity between items")
     elasticity_matrix, elasticity_significance = calculate_elasticity_matrix(
-        sales_pivot, price_pivot, promo_pivot, items_list, control_vars, oos_pivot
+        sales_pivot, 
+        price_pivot, 
+        promo_pivot, 
+        items_list, 
+        control_vars, 
+        oos_pivot,
+        product_attributes=attributes_df,
+        substitution_scope=substitution_scope
     )
     
     # Use the elasticity results for price effects
@@ -362,13 +374,16 @@ def main(config_path, export_csv=False, verbose=False):
         plt.savefig(os.path.join(reports_dir, 'substitution_network.png'), dpi=300)
         
         logger.info("Generating price effect visualizations for top pairs")
-        visualize_top_pairs(
-            substitutes_dict,
-            transactions_df,
-            price_change_types,
-            discount_df,
-            output_dir=reports_dir
-        )
+        try:
+            visualize_top_pairs(
+                substitutes_dict,
+                transactions_df,
+                price_change_types,
+                discount_df,
+                output_dir=reports_dir
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate price effect visualizations: {str(e)}")
         
         logger.info("Generating report figures")
         generate_report_figures(

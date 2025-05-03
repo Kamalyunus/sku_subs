@@ -14,7 +14,9 @@ from src.utils.validation import validate_substitution_with_controls
 logger = logging.getLogger(__name__)
 
 
-def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo_df, items_list, min_oos_days=5, control_vars=None):
+def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo_df, items_list, 
+                                     min_oos_days=5, control_vars=None, product_attributes=None, 
+                                     substitution_scope="category"):
     """
     Calculate substitution effect using the enhanced validation framework
     
@@ -34,13 +36,19 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
         Minimum number of OOS days required to consider a valid signal
     control_vars : DataFrame, optional
         Control variables for regression (e.g., weekday, month)
+    product_attributes : DataFrame, optional
+        Product attributes data with category/subcategory information
+    substitution_scope : str, optional
+        Scope for substitution filtering: "category", "sub_category", or "all"
         
     Returns:
     --------
     tuple
         (substitution_matrix, significance_matrix, detailed_results)
     """
-    logger.info(f"Calculating OOS substitution with validation (min_oos_days={min_oos_days})")
+    logger.info(f"Calculating OOS substitution with validation (min_oos_days={min_oos_days}, scope={substitution_scope})")
+    
+    from src.utils.helpers import check_substitution_scope
     
     substitution_matrix = pd.DataFrame(0.0, index=items_list, columns=items_list, dtype=float)
     significance_matrix = pd.DataFrame(False, index=items_list, columns=items_list)
@@ -48,6 +56,8 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
     
     item_count = len(items_list)
     processed = 0
+    pairs_evaluated = 0
+    pairs_skipped = 0
     
     for item_a in items_list:
         processed += 1
@@ -70,6 +80,13 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
             if item_a == item_b or item_b not in sales_df.columns:
                 continue
             
+            # Skip if not in same category/subcategory based on substitution scope
+            if not check_substitution_scope(item_a, item_b, product_attributes, substitution_scope):
+                pairs_skipped += 1
+                continue
+                
+            pairs_evaluated += 1
+            
             # Use validation function from validation.py
             result = validate_substitution_with_controls(
                 sales_df, oos_df, price_df, promo_df, 
@@ -82,5 +99,5 @@ def calculate_oos_substitution_with_validation(sales_df, oos_df, price_df, promo
                 substitution_matrix.loc[item_a, item_b] = result['oos_effect']
                 significance_matrix.loc[item_a, item_b] = True
     
-    logger.info("OOS substitution validation complete")
+    logger.info(f"OOS substitution validation complete: evaluated {pairs_evaluated} pairs, skipped {pairs_skipped} pairs")
     return substitution_matrix, significance_matrix, detailed_results
