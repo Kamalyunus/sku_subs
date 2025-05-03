@@ -83,6 +83,12 @@ The system expects transaction data with the following columns:
 - `is_on_promotion`: Boolean flag (0/1) indicating if product was on promotion
 - `is_out_of_stock`: Boolean flag (0/1) indicating if product was out of stock
 
+The product attributes file (optional but recommended) should include:
+- `item_id`: Unique product identifier (same as in transaction data)
+- `product_name`: Name of the product
+- `category`: Main product category (e.g., Fruit, Vegetables, Dairy)
+- `sub_category`: Sub-category (e.g., Fresh, Frozen, Organic)
+
 ## Configuration
 
 The `config.yaml` file contains all parameters for the analysis pipeline, including:
@@ -90,9 +96,25 @@ The `config.yaml` file contains all parameters for the analysis pipeline, includ
 - Data paths and preprocessing parameters
 - Analysis thresholds and weights (OOS vs price effects)
 - Minimum data requirements (days per product, price changes)
+- Substitution scope (category, sub_category, or all)
 - Visualization settings and network parameters
 - Reporting options and export formats
 - Elasticity calculation and validation parameters
+
+### Substitution Scope
+
+The system allows you to define the scope of substitution relationships:
+
+```yaml
+analysis:
+  substitution_scope: "category"  # Options: "category", "sub_category", "all"
+```
+
+- `category`: Only consider items within the same category as potential substitutes
+- `sub_category`: Only consider items within the same sub-category as potential substitutes
+- `all`: Consider all items as potential substitutes regardless of category
+
+This parameter ensures that the system respects logical product relationships (e.g., users typically won't substitute fruits with dairy products).
 
 ## Results
 

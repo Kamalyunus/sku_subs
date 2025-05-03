@@ -21,6 +21,7 @@ analysis:
   require_significance: true
   use_elasticity: true
   use_validation: true
+  substitution_scope: "category"  # Options: "category", "sub_category", "all"
   
 # Price analysis
 price_analysis:

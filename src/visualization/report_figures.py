@@ -95,6 +95,67 @@ def generate_report_figures(substitutes_dict, oos_matrix, price_matrix, price_ty
     
     generated_figures.append(output_path)
     
+    # Add figure showing category matches in substitution relationships
+    logger.info("Generating category analysis figure")
+    
+    # Check if category information is available in substitutes
+    has_category_info = False
+    for item, substitutes in substitutes_dict.items():
+        if substitutes:
+            if 'category_a' in substitutes[0][2] and 'category_b' in substitutes[0][2]:
+                has_category_info = True
+                break
+    
+    if has_category_info:
+        # Count same category vs different category substitutions
+        same_category = 0
+        diff_category = 0
+        category_pairs = []
+        
+        for item, substitutes in substitutes_dict.items():
+            for _, score, details in substitutes:
+                if 'category_a' in details and 'category_b' in details:
+                    if details['category_a'] == details['category_b']:
+                        same_category += 1
+                        category_pairs.append(('Same Category', score))
+                    else:
+                        diff_category += 1
+                        category_pairs.append(('Different Category', score))
+        
+        # Create figure showing category relationships
+        plt.figure(figsize=(10, 6))
+        
+        # Simple bar chart of same vs different
+        category_counts = pd.Series({'Same Category': same_category, 'Different Category': diff_category})
+        ax = sns.barplot(x=category_counts.index, y=category_counts.values)
+        
+        # Add percentages on top of bars
+        total = category_counts.sum()
+        for i, count in enumerate(category_counts):
+            ax.text(i, count + 0.1, f'{count/total:.1%}', ha='center')
+        
+        plt.title('Substitution Relationships by Category')
+        plt.ylabel('Count')
+        
+        output_path = os.path.join(output_dir, 'category_substitution_analysis.png')
+        plt.savefig(output_path, dpi=300)
+        plt.close()
+        
+        generated_figures.append(output_path)
+        
+        # Boxplot of substitution scores by category relationship
+        if category_pairs:
+            plt.figure(figsize=(10, 6))
+            category_df = pd.DataFrame(category_pairs, columns=['Category Match', 'Substitution Score'])
+            sns.boxplot(data=category_df, x='Category Match', y='Substitution Score')
+            plt.title('Substitution Scores by Category Relationship')
+            
+            output_path = os.path.join(output_dir, 'category_score_distribution.png')
+            plt.savefig(output_path, dpi=300)
+            plt.close()
+            
+            generated_figures.append(output_path)
+    
     # Figure 3: Heatmap of top OOS substitution effects
     logger.info("Generating OOS heatmap figure")
     

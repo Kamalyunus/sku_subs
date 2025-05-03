@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 def find_top_substitutes(oos_matrix, oos_significance, 
                          price_matrix, price_type, price_significance,
                          k=5, weights={'oos': 0.5, 'price': 0.5}, 
-                         require_significance=True, elasticity_data=None):
+                         require_significance=True, elasticity_data=None,
+                         product_attributes=None, substitution_scope="category"):
     """
     Combine OOS and price effects to find top k substitutes
     
@@ -38,6 +39,11 @@ def find_top_substitutes(oos_matrix, oos_significance,
         If True, only consider effects that are statistically significant
     elasticity_data : dict, optional
         Additional elasticity data if available
+    product_attributes : DataFrame, optional
+        Product attributes data with category information
+    substitution_scope : str, default="category"
+        Scope for finding substitutes: "category" (within same category only), 
+        "sub_category" (within same sub-category only), or "all" (no restrictions)
         
     Returns:
     --------
@@ -88,6 +94,19 @@ def find_top_substitutes(oos_matrix, oos_significance,
     # Combined score
     combined_matrix = weights['oos'] * oos_norm + weights['price'] * price_norm
     
+    # Create item category mapping if product attributes are available
+    item_categories = {}
+    item_subcategories = {}
+    
+    if product_attributes is not None and substitution_scope in ["category", "sub_category"]:
+        logger.info(f"Applying substitution scope: {substitution_scope}")
+        # Create mapping of item to category/sub_category
+        if 'item_id' in product_attributes.columns and 'category' in product_attributes.columns:
+            item_categories = dict(zip(product_attributes['item_id'], product_attributes['category']))
+            
+        if 'item_id' in product_attributes.columns and 'sub_category' in product_attributes.columns:
+            item_subcategories = dict(zip(product_attributes['item_id'], product_attributes['sub_category']))
+    
     # For each item, find top k substitutes
     substitutes_dict = {}
     
@@ -99,6 +118,23 @@ def find_top_substitutes(oos_matrix, oos_significance,
         
         # Only include items with non-zero scores
         item_scores = item_scores[item_scores > 0]
+        
+        # Apply category/sub-category restriction if needed
+        if substitution_scope == "category" and item_categories and item_a in item_categories:
+            # Filter to only include items in the same category
+            same_category_items = [item for item in item_scores.index 
+                                   if item in item_categories and 
+                                   item_categories[item] == item_categories[item_a]]
+            item_scores = item_scores.loc[same_category_items]
+            logger.debug(f"Item {item_a}: Filtered to {len(item_scores)} items in same category {item_categories[item_a]}")
+            
+        elif substitution_scope == "sub_category" and item_subcategories and item_a in item_subcategories:
+            # Filter to only include items in the same sub-category
+            same_subcategory_items = [item for item in item_scores.index 
+                                     if item in item_subcategories and 
+                                     item_subcategories[item] == item_subcategories[item_a]]
+            item_scores = item_scores.loc[same_subcategory_items]
+            logger.debug(f"Item {item_a}: Filtered to {len(item_scores)} items in same sub-category {item_subcategories[item_a]}")
         
         # Sort by combined score (descending)
         top_items = item_scores.sort_values(ascending=False).head(k)
@@ -113,6 +149,16 @@ def find_top_substitutes(oos_matrix, oos_significance,
                 'price_effect_type': price_type.loc[item_a, item_b],
                 'price_significant': bool(price_significance.loc[item_a, item_b])
             }
+            
+            # Add category information if available
+            if item_a in item_categories:
+                details['category_a'] = item_categories[item_a]
+            if item_b in item_categories:
+                details['category_b'] = item_categories[item_b]
+            if item_a in item_subcategories:
+                details['sub_category_a'] = item_subcategories[item_a]
+            if item_b in item_subcategories:
+                details['sub_category_b'] = item_subcategories[item_b]
             
             # Include elasticity data if available
             if elasticity_data is not None and item_a in elasticity_data and item_b in elasticity_data[item_a]:
@@ -149,7 +195,8 @@ def find_top_substitutes(oos_matrix, oos_significance,
 
 def find_substitutes_with_validation(oos_results, price_results, elasticity_results=None,
                                     k=5, weights={'oos': 0.5, 'price': 0.5},
-                                    require_significance=True):
+                                    require_significance=True, product_attributes=None,
+                                    substitution_scope="category"):
     """
     Enhanced substitute finding using the full validation results
     
@@ -167,6 +214,11 @@ def find_substitutes_with_validation(oos_results, price_results, elasticity_resu
         Weights for different effects in combined score
     require_significance : bool
         If True, only consider effects that are statistically significant
+    product_attributes : DataFrame, optional
+        Product attributes data with category information
+    substitution_scope : str, default="category"
+        Scope for finding substitutes: "category" (within same category only), 
+        "sub_category" (within same sub-category only), or "all" (no restrictions)
         
     Returns:
     --------
@@ -182,6 +234,19 @@ def find_substitutes_with_validation(oos_results, price_results, elasticity_resu
     combined_scores = pd.DataFrame(0.0, index=items_list, columns=items_list)
     detailed_results = {}
     
+    # Create item category mapping if product attributes are available
+    item_categories = {}
+    item_subcategories = {}
+    
+    if product_attributes is not None and substitution_scope in ["category", "sub_category"]:
+        logger.info(f"Applying substitution scope: {substitution_scope}")
+        # Create mapping of item to category/sub_category
+        if 'item_id' in product_attributes.columns and 'category' in product_attributes.columns:
+            item_categories = dict(zip(product_attributes['item_id'], product_attributes['category']))
+            
+        if 'item_id' in product_attributes.columns and 'sub_category' in product_attributes.columns:
+            item_subcategories = dict(zip(product_attributes['item_id'], product_attributes['sub_category']))
+    
     # Process each item pair
     for item_a in items_list:
         detailed_results[item_a] = {}
@@ -193,6 +258,21 @@ def find_substitutes_with_validation(oos_results, price_results, elasticity_resu
             # Skip if no OOS results
             if item_b not in oos_results.get(item_a, {}):
                 continue
+                
+            # Apply category/sub-category restriction if needed
+            if substitution_scope == "category" and item_categories:
+                # Skip if items are not in the same category
+                if item_a not in item_categories or item_b not in item_categories:
+                    continue
+                if item_categories[item_a] != item_categories[item_b]:
+                    continue
+            
+            elif substitution_scope == "sub_category" and item_subcategories:
+                # Skip if items are not in the same sub-category
+                if item_a not in item_subcategories or item_b not in item_subcategories:
+                    continue
+                if item_subcategories[item_a] != item_subcategories[item_b]:
+                    continue
                 
             # Get OOS and price effects
             oos_effect = oos_results[item_a][item_b].get('oos_effect', 0)
@@ -252,6 +332,16 @@ def find_substitutes_with_validation(oos_results, price_results, elasticity_resu
                         'elasticity': elasticity,
                         'elasticity_significant': elasticity_significant
                     }
+                    
+                    # Add category information if available
+                    if item_a in item_categories:
+                        detailed_results[item_a][item_b]['category_a'] = item_categories[item_a]
+                    if item_b in item_categories:
+                        detailed_results[item_a][item_b]['category_b'] = item_categories[item_b]
+                    if item_a in item_subcategories:
+                        detailed_results[item_a][item_b]['sub_category_a'] = item_subcategories[item_a]
+                    if item_b in item_subcategories:
+                        detailed_results[item_a][item_b]['sub_category_b'] = item_subcategories[item_b]
                     
                     # Determine dominant factor
                     oos_contrib = oos_effect * weights['oos']

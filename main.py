@@ -274,6 +274,10 @@ def main(config_path, export_csv=False):
                         'significant': bool(elasticity_significance.loc[item_a, item_b])
                     }
     
+    # Get substitution scope from config
+    substitution_scope = config.get('analysis', {}).get('substitution_scope', "category")
+    logger.info(f"Using substitution scope: {substitution_scope}")
+    
     # Find top substitutes
     logger.info("Finding top substitutes with combined effects")
     if oos_detailed is not None:
@@ -288,7 +292,9 @@ def main(config_path, export_csv=False):
                 'oos': config['analysis']['weights']['oos'],
                 'price': config['analysis']['weights']['price']
             },
-            require_significance=config['analysis']['require_significance']
+            require_significance=config['analysis']['require_significance'],
+            product_attributes=attributes_df,
+            substitution_scope=substitution_scope
         )
     else:
         # Use standard substitute finding
@@ -304,7 +310,9 @@ def main(config_path, export_csv=False):
                 'price': config['analysis']['weights']['price']
             },
             require_significance=config['analysis']['require_significance'],
-            elasticity_data=elasticity_data
+            elasticity_data=elasticity_data,
+            product_attributes=attributes_df,
+            substitution_scope=substitution_scope
         )
     
     # Save results
