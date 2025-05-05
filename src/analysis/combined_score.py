@@ -3,6 +3,7 @@
 
 """
 Combined scoring for substitute products using the combined model.
+Improved to account for different scales of OOS, price elasticity, and promo effects.
 """
 
 import pandas as pd
@@ -17,6 +18,7 @@ def find_substitutes_with_validation(combined_results, k=5,
                                     substitution_scope="category"):
     """
     Identify top substitutes using the combined model results with dynamic weights based on significance
+    and normalized effects to account for different scales.
     
     Parameters:
     -----------
@@ -62,6 +64,62 @@ def find_substitutes_with_validation(combined_results, k=5,
         if 'item_id' in product_attributes.columns and 'sub_category' in product_attributes.columns:
             item_subcategories = dict(zip(product_attributes['item_id'], product_attributes['sub_category']))
     
+    # Collect all significant effect values to determine scale factors
+    all_oos_effects = []
+    all_price_effects = []
+    all_promo_effects = []
+    
+    # First pass to collect effect values
+    for item_a in items_list:
+        for item_b in combined_results.get(item_a, {}):
+            result = combined_results[item_a][item_b]
+            
+            # Skip if validation was not successful
+            if not result.get('validation_successful', False):
+                continue
+            
+            # Extract all effects
+            oos_effect = result.get('oos_effect', 0)
+            oos_significant = result.get('oos_significant', False)
+            
+            price_effect = result.get('price_effect', 0)
+            price_significant = result.get('price_significant', False)
+            
+            promo_effect = abs(result.get('promo_effect', 0))  # Use absolute value as promo effect is negative
+            promo_significant = result.get('promo_significant', False)
+            
+            # Collect significant effects
+            if oos_significant and oos_effect > 0:
+                all_oos_effects.append(oos_effect)
+                
+            if price_significant and price_effect > 0:
+                all_price_effects.append(price_effect)
+                
+            if promo_significant and promo_effect > 0:
+                all_promo_effects.append(promo_effect)
+    
+    # Calculate median values for each effect type (more robust than mean)
+    # Default to 1.0 if no significant effects found
+    median_oos = np.median(all_oos_effects) if all_oos_effects else 1.0
+    median_price = np.median(all_price_effects) if all_price_effects else 1.0
+    median_promo = np.median(all_promo_effects) if all_promo_effects else 1.0
+    
+    # Calculate normalization factors to bring effects to similar scales
+    # We use the median ratios to determine how to scale each effect type
+    
+    # Get the average of medians across all effect types
+    median_avg = np.mean([median_oos, median_price, median_promo])
+    
+    # Calculate scale factors to bring each effect type to similar scale
+    scale_factors = {
+        'oos': median_avg / median_oos if median_oos > 0 else 1.0,
+        'price': median_avg / median_price if median_price > 0 else 1.0,
+        'promo': median_avg / median_promo if median_promo > 0 else 1.0
+    }
+    
+    logger.info(f"Effect scale factors: OOS={scale_factors['oos']:.3f}, "
+               f"Price={scale_factors['price']:.3f}, Promo={scale_factors['promo']:.3f}")
+    
     # Process each item pair
     for item_a in items_list:
         detailed_results[item_a] = {}
@@ -103,10 +161,10 @@ def find_substitutes_with_validation(combined_results, k=5,
             price_effect = result.get('price_effect', 0)
             price_significant = result.get('price_significant', False)
             
-            promo_effect = abs(result.get('promo_effect', 0))  # Use absolute value as promo effect is negative for cannibalization
+            promo_effect = abs(result.get('promo_effect', 0))  # Use absolute value as promo effect is negative
             promo_significant = result.get('promo_significant', False)
             
-            # Determine which effects are significant
+            # Determine which effects are significant and positive
             significant_effects = {
                 'oos': oos_significant and oos_effect > 0,
                 'price': price_significant and price_effect > 0,
@@ -130,74 +188,77 @@ def find_substitutes_with_validation(combined_results, k=5,
                     else:
                         dynamic_weights[effect_name] = 0.0
                 
-                # Normalize effects
-                effects = {
+                # Create effect dict with original effect values
+                original_effects = {
                     'oos': oos_effect,
                     'price': price_effect,
                     'promo': promo_effect
                 }
                 
-                # Get effects that are significant
-                sig_effects = {k: v for k, v in effects.items() if significant_effects[k]}
+                # Scale effects to account for different scales
+                scaled_effects = {
+                    name: original_effects[name] * scale_factors[name] 
+                    for name in ['oos', 'price', 'promo']
+                }
                 
-                # If any effects are significant, proceed with combined score calculation
-                if sig_effects:
-                    # Find maximum effect value among significant effects
-                    max_effect = max(sig_effects.values())
-                    
-                    if max_effect > 0:
-                        # Normalize each effect relative to the maximum significant effect
-                        oos_norm = oos_effect / max_effect if significant_effects['oos'] else 0
-                        price_norm = price_effect / max_effect if significant_effects['price'] else 0
-                        promo_norm = promo_effect / max_effect if significant_effects['promo'] else 0
-                        
-                        # Calculate combined score using dynamic weights
-                        score = (
-                            dynamic_weights['oos'] * oos_norm + 
-                            dynamic_weights['price'] * price_norm + 
-                            dynamic_weights['promo'] * promo_norm
-                        )
-                        
-                        combined_scores.loc[item_a, item_b] = score
-                        
-                        # Store detailed results
-                        detailed_results[item_a][item_b] = {
-                            'combined_score': score,
-                            'significant_dimensions': sig_count,
-                            'dynamic_weights': dynamic_weights,
-                            'oos_effect': oos_effect,
-                            'oos_significant': oos_significant,
-                            'oos_normalized': oos_norm,
-                            'price_effect': price_effect,
-                            'price_significant': price_significant,
-                            'price_normalized': price_norm,
-                            'price_effect_type': 'elasticity',  # Price effect is elasticity in the combined model
-                            'promo_effect': promo_effect,
-                            'promo_significant': promo_significant,
-                            'promo_normalized': promo_norm,
-                            'linear_model_r2': result.get('linear_model_r2', 0),
-                            'log_model_r2': result.get('log_model_r2', 0)
-                        }
-                        
-                        # Add category information if available
-                        if item_a in item_categories:
-                            detailed_results[item_a][item_b]['category_a'] = item_categories[item_a]
-                        if item_b in item_categories:
-                            detailed_results[item_a][item_b]['category_b'] = item_categories[item_b]
-                        if item_a in item_subcategories:
-                            detailed_results[item_a][item_b]['sub_category_a'] = item_subcategories[item_a]
-                        if item_b in item_subcategories:
-                            detailed_results[item_a][item_b]['sub_category_b'] = item_subcategories[item_b]
-                        
-                        # Determine dominant factor (only consider significant ones)
-                        sig_contributions = {
-                            'availability': oos_effect * dynamic_weights['oos'] if significant_effects['oos'] else 0,
-                            'elasticity': price_effect * dynamic_weights['price'] if significant_effects['price'] else 0,
-                            'promotion': promo_effect * dynamic_weights['promo'] if significant_effects['promo'] else 0
-                        }
-                        
-                        dominant_factor = max(sig_contributions, key=sig_contributions.get)
-                        detailed_results[item_a][item_b]['dominant_factor'] = dominant_factor
+                # Apply weights to scaled effects
+                weighted_effects = {
+                    name: scaled_effects[name] * dynamic_weights[name] 
+                    for name in ['oos', 'price', 'promo']
+                }
+                
+                # Simple sum of weighted effects
+                score = sum(weighted_effects.values())
+                
+                # Store the score
+                combined_scores.loc[item_a, item_b] = score
+                
+                # Store detailed results
+                detailed_results[item_a][item_b] = {
+                    'combined_score': score,
+                    'significant_dimensions': sig_count,
+                    'dynamic_weights': dynamic_weights,
+                    'oos_effect': oos_effect,
+                    'oos_significant': oos_significant,
+                    'oos_scaled': scaled_effects['oos'],
+                    'oos_weighted': weighted_effects['oos'],
+                    'price_effect': price_effect,
+                    'price_significant': price_significant,
+                    'price_scaled': scaled_effects['price'],
+                    'price_weighted': weighted_effects['price'],
+                    'price_effect_type': 'elasticity',  # Price effect is elasticity in the combined model
+                    'promo_effect': promo_effect,
+                    'promo_significant': promo_significant,
+                    'promo_scaled': scaled_effects['promo'],
+                    'promo_weighted': weighted_effects['promo'],
+                    'linear_model_r2': result.get('linear_model_r2', 0),
+                    'log_model_r2': result.get('log_model_r2', 0)
+                }
+                
+                # Add category information if available
+                if item_a in item_categories:
+                    detailed_results[item_a][item_b]['category_a'] = item_categories[item_a]
+                if item_b in item_categories:
+                    detailed_results[item_a][item_b]['category_b'] = item_categories[item_b]
+                if item_a in item_subcategories:
+                    detailed_results[item_a][item_b]['sub_category_a'] = item_subcategories[item_a]
+                if item_b in item_subcategories:
+                    detailed_results[item_a][item_b]['sub_category_b'] = item_subcategories[item_b]
+                
+                # Determine dominant factor (only consider significant ones)
+                dominant_factor = max(
+                    {k: v for k, v in weighted_effects.items() if v > 0},
+                    key=weighted_effects.get
+                )
+                
+                # Map effect names to user-friendly names
+                factor_names = {
+                    'oos': 'availability',
+                    'price': 'elasticity',
+                    'promo': 'promotion'
+                }
+                
+                detailed_results[item_a][item_b]['dominant_factor'] = factor_names.get(dominant_factor, dominant_factor)
     
     # Create substitutes dictionary
     substitutes_dict = {}

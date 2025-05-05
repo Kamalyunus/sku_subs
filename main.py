@@ -128,7 +128,9 @@ def create_enhanced_controls(sales_pivot, control_pivot, use_korean_holidays=Tru
             # Create dummy variables for specific holiday periods
             for holiday_name, dates in korean_holidays.items():
                 holiday_dates = pd.to_datetime(dates)
-                enhanced_controls[f'holiday_{holiday_name}'] = unique_dates.isin(holiday_dates).astype(int).reindex(enhanced_controls.index).values
+                # Create a Series first, then reindex
+                holiday_series = pd.Series(unique_dates.isin(holiday_dates).astype(int), index=unique_dates, name=f'holiday_{holiday_name}')
+                enhanced_controls[f'holiday_{holiday_name}'] = holiday_series.reindex(enhanced_controls.index).values
             
         except Exception as e:
             logger.warning(f"Error creating Korean holiday calendar: {str(e)}")

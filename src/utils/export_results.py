@@ -47,10 +47,13 @@ def export_to_csv(results_path, output_dir):
                 'combined_score': score,
                 'oos_effect': details.get('oos_effect', 0),
                 'price_effect': details.get('price_effect', 0),
+                'promo_effect': details.get('promo_effect', 0),
                 'dominant_factor': details.get('dominant_factor', 'unknown'),
                 'oos_significant': details.get('oos_significant', False),
                 'price_significant': details.get('price_significant', False),
-                'price_effect_type': details.get('price_effect_type', 'none')
+                'promo_significant': details.get('promo_significant', False),
+                'price_effect_type': details.get('price_effect_type', 'none'),
+                'significant_dimensions': details.get('significant_dimensions', 0)
             })
     
     # Create and save dataframe
@@ -60,17 +63,24 @@ def export_to_csv(results_path, output_dir):
     logger.info(f"Saved top substitutes to {subs_csv_path}")
     
     # Export matrices to CSV
-    for matrix_name in ['combined_matrix', 'oos_matrix', 'price_matrix']:
+    for matrix_name in ['combined_matrix', 'oos_matrix', 'price_matrix', 'promo_matrix']:
         if matrix_name in results:
             matrix_path = os.path.join(output_dir, f"{matrix_name}.csv")
             results[matrix_name].to_csv(matrix_path)
             logger.info(f"Saved {matrix_name} to {matrix_path}")
     
     # Export price type matrix if available
-    if 'price_type' in results:
-        price_type_path = os.path.join(output_dir, "price_type_matrix.csv")
-        results['price_type'].to_csv(price_type_path)
-        logger.info(f"Saved price type matrix to {price_type_path}")
+    if 'effect_type' in results:
+        effect_type_path = os.path.join(output_dir, "effect_type_matrix.csv")
+        results['effect_type'].to_csv(effect_type_path)
+        logger.info(f"Saved effect type matrix to {effect_type_path}")
+        
+    # Export significance matrices if available
+    for matrix_name in ['oos_significance', 'price_significance', 'promo_significance']:
+        if matrix_name in results:
+            matrix_path = os.path.join(output_dir, f"{matrix_name}.csv")
+            results[matrix_name].to_csv(matrix_path)
+            logger.info(f"Saved {matrix_name} to {matrix_path}")
     
     logger.info("Export to CSV complete")
     return subs_csv_path
