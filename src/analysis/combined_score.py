@@ -16,7 +16,7 @@ def find_substitutes_with_validation(combined_results, k=5,
                                     require_significance=True, product_attributes=None,
                                     substitution_scope="category"):
     """
-    Identify top substitutes using the combined model results
+    Identify top substitutes using the combined model results with dynamic weights based on significance
     
     Parameters:
     -----------
@@ -25,9 +25,10 @@ def find_substitutes_with_validation(combined_results, k=5,
     k : int
         Number of top substitutes to return for each item
     weights : dict
-        Weights for different effects in combined score (oos, price, promo)
+        Base weights for different effects in combined score (oos, price, promo)
+        These will be adjusted dynamically based on which effects are significant
     require_significance : bool
-        If True, only consider effects that are statistically significant
+        If True, item pairs must have at least one significant effect to be considered
     product_attributes : DataFrame, optional
         Product attributes data with category information
     substitution_scope : str, default="category"
@@ -105,71 +106,98 @@ def find_substitutes_with_validation(combined_results, k=5,
             promo_effect = abs(result.get('promo_effect', 0))  # Use absolute value as promo effect is negative for cannibalization
             promo_significant = result.get('promo_significant', False)
             
-            # Apply significance filter
-            if require_significance:
-                if not oos_significant:
-                    oos_effect = 0
-                if not price_significant:
-                    price_effect = 0
-                if not promo_significant:
-                    promo_effect = 0
+            # Determine which effects are significant
+            significant_effects = {
+                'oos': oos_significant and oos_effect > 0,
+                'price': price_significant and price_effect > 0,
+                'promo': promo_significant and promo_effect > 0
+            }
+            
+            # Count number of significant effects
+            sig_count = sum(significant_effects.values())
+            
+            # Skip if require_significance is True and no significant effects
+            if require_significance and sig_count == 0:
+                continue
+            
+            # Calculate combined score using only significant effects
+            if sig_count > 0:
+                # Calculate dynamic weights based on which effects are significant
+                dynamic_weights = {}
+                for effect_name in ['oos', 'price', 'promo']:
+                    if significant_effects[effect_name]:
+                        dynamic_weights[effect_name] = 1.0 / sig_count
+                    else:
+                        dynamic_weights[effect_name] = 0.0
                 
-            # Calculate combined score
-            if oos_effect > 0 or price_effect > 0 or promo_effect > 0:
                 # Normalize effects
-                effects = [oos_effect, price_effect, promo_effect]
-                max_effect = max(effects)
+                effects = {
+                    'oos': oos_effect,
+                    'price': price_effect,
+                    'promo': promo_effect
+                }
                 
-                if max_effect > 0:
-                    oos_norm = oos_effect / max_effect
-                    price_norm = price_effect / max_effect
-                    promo_norm = promo_effect / max_effect
+                # Get effects that are significant
+                sig_effects = {k: v for k, v in effects.items() if significant_effects[k]}
+                
+                # If any effects are significant, proceed with combined score calculation
+                if sig_effects:
+                    # Find maximum effect value among significant effects
+                    max_effect = max(sig_effects.values())
                     
-                    score = (
-                        weights.get('oos', 0.33) * oos_norm + 
-                        weights.get('price', 0.33) * price_norm + 
-                        weights.get('promo', 0.33) * promo_norm
-                    )
-                    
-                    combined_scores.loc[item_a, item_b] = score
-                    
-                    # Store detailed results
-                    detailed_results[item_a][item_b] = {
-                        'combined_score': score,
-                        'oos_effect': oos_effect,
-                        'oos_significant': oos_significant,
-                        'price_effect': price_effect,
-                        'price_significant': price_significant,
-                        'price_effect_type': 'elasticity',  # Price effect is elasticity in the combined model
-                        'promo_effect': promo_effect,
-                        'promo_significant': promo_significant,
-                        'linear_model_r2': result.get('linear_model_r2', 0),
-                        'log_model_r2': result.get('log_model_r2', 0)
-                    }
-                    
-                    # Add category information if available
-                    if item_a in item_categories:
-                        detailed_results[item_a][item_b]['category_a'] = item_categories[item_a]
-                    if item_b in item_categories:
-                        detailed_results[item_a][item_b]['category_b'] = item_categories[item_b]
-                    if item_a in item_subcategories:
-                        detailed_results[item_a][item_b]['sub_category_a'] = item_subcategories[item_a]
-                    if item_b in item_subcategories:
-                        detailed_results[item_a][item_b]['sub_category_b'] = item_subcategories[item_b]
-                    
-                    # Determine dominant factor
-                    oos_contrib = oos_effect * weights.get('oos', 0.33)
-                    price_contrib = price_effect * weights.get('price', 0.33)
-                    promo_contrib = promo_effect * weights.get('promo', 0.33)
-                    
-                    contributions = {
-                        'availability': oos_contrib,
-                        'elasticity': price_contrib,
-                        'promotion': promo_contrib
-                    }
-                    
-                    dominant_factor = max(contributions, key=contributions.get)
-                    detailed_results[item_a][item_b]['dominant_factor'] = dominant_factor
+                    if max_effect > 0:
+                        # Normalize each effect relative to the maximum significant effect
+                        oos_norm = oos_effect / max_effect if significant_effects['oos'] else 0
+                        price_norm = price_effect / max_effect if significant_effects['price'] else 0
+                        promo_norm = promo_effect / max_effect if significant_effects['promo'] else 0
+                        
+                        # Calculate combined score using dynamic weights
+                        score = (
+                            dynamic_weights['oos'] * oos_norm + 
+                            dynamic_weights['price'] * price_norm + 
+                            dynamic_weights['promo'] * promo_norm
+                        )
+                        
+                        combined_scores.loc[item_a, item_b] = score
+                        
+                        # Store detailed results
+                        detailed_results[item_a][item_b] = {
+                            'combined_score': score,
+                            'significant_dimensions': sig_count,
+                            'dynamic_weights': dynamic_weights,
+                            'oos_effect': oos_effect,
+                            'oos_significant': oos_significant,
+                            'oos_normalized': oos_norm,
+                            'price_effect': price_effect,
+                            'price_significant': price_significant,
+                            'price_normalized': price_norm,
+                            'price_effect_type': 'elasticity',  # Price effect is elasticity in the combined model
+                            'promo_effect': promo_effect,
+                            'promo_significant': promo_significant,
+                            'promo_normalized': promo_norm,
+                            'linear_model_r2': result.get('linear_model_r2', 0),
+                            'log_model_r2': result.get('log_model_r2', 0)
+                        }
+                        
+                        # Add category information if available
+                        if item_a in item_categories:
+                            detailed_results[item_a][item_b]['category_a'] = item_categories[item_a]
+                        if item_b in item_categories:
+                            detailed_results[item_a][item_b]['category_b'] = item_categories[item_b]
+                        if item_a in item_subcategories:
+                            detailed_results[item_a][item_b]['sub_category_a'] = item_subcategories[item_a]
+                        if item_b in item_subcategories:
+                            detailed_results[item_a][item_b]['sub_category_b'] = item_subcategories[item_b]
+                        
+                        # Determine dominant factor (only consider significant ones)
+                        sig_contributions = {
+                            'availability': oos_effect * dynamic_weights['oos'] if significant_effects['oos'] else 0,
+                            'elasticity': price_effect * dynamic_weights['price'] if significant_effects['price'] else 0,
+                            'promotion': promo_effect * dynamic_weights['promo'] if significant_effects['promo'] else 0
+                        }
+                        
+                        dominant_factor = max(sig_contributions, key=sig_contributions.get)
+                        detailed_results[item_a][item_b]['dominant_factor'] = dominant_factor
     
     # Create substitutes dictionary
     substitutes_dict = {}

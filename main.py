@@ -59,6 +59,83 @@ def setup_logging(verbose=False):
     else:
         logging.warning("Minimal logging enabled (WARNING level)")
 
+def create_enhanced_controls(sales_pivot, control_pivot, use_korean_holidays=True):
+    """
+    Create enhanced control variables for regression analyses
+    
+    Parameters:
+    -----------
+    sales_pivot : DataFrame
+        Sales pivot table with date index
+    control_pivot : DataFrame
+        Basic control variables
+    use_korean_holidays : bool
+        Whether to include Korean holidays
+        
+    Returns:
+    --------
+    DataFrame
+        Enhanced control variables dataframe
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Creating enhanced national-level control variables")
+    
+    # Extract unique dates from the pivot
+    unique_dates = sales_pivot.index.get_level_values('date').unique()
+    
+    # Start with the existing control variables
+    enhanced_controls = control_pivot.copy()
+    
+    # Add quarter indicators if not present
+    if not any(col.startswith('quarter_') for col in enhanced_controls.columns):
+        quarter_dummies = pd.get_dummies(pd.DatetimeIndex(unique_dates).quarter, prefix='quarter')
+        quarter_dummies.index = unique_dates
+        for col in quarter_dummies.columns:
+            enhanced_controls[col] = quarter_dummies[col].reindex(enhanced_controls.index).values
+    
+    # Add Korean holidays if requested
+    if use_korean_holidays:
+        try:
+            # Define Korean holidays for the analysis period
+            korean_holidays = {
+                # Traditional Korean holidays (approximation - some are lunar calendar based)
+                "new_years_day": [f"{year}-01-01" for year in range(2023, 2026)],
+                "seollal": [date for year in range(2023, 2026) 
+                           for date in [f"{year}-02-01", f"{year}-02-02", f"{year}-02-03"]],  # Korean New Year
+                "independence_day": [f"{year}-03-01" for year in range(2023, 2026)],
+                "buddha_birthday": [f"{year}-05-08" for year in range(2023, 2026)],
+                "memorial_day": [f"{year}-06-06" for year in range(2023, 2026)],
+                "liberation_day": [f"{year}-08-15" for year in range(2023, 2026)],
+                "chuseok": [date for year in range(2023, 2026)
+                           for date in [f"{year}-09-28", f"{year}-09-29", f"{year}-09-30"]],  # Korean Thanksgiving
+                "national_foundation_day": [f"{year}-10-03" for year in range(2023, 2026)],
+                "hangul_day": [f"{year}-10-09" for year in range(2023, 2026)],
+                "christmas": [f"{year}-12-25" for year in range(2023, 2026)]
+            }
+            
+            # Flatten holiday list
+            korean_holiday_dates = []
+            for holiday_list in korean_holidays.values():
+                korean_holiday_dates.extend(holiday_list)
+            
+            # Convert to datetime
+            korean_holiday_dates = pd.to_datetime(korean_holiday_dates)
+            
+            # Create holiday indicators
+            is_holiday = pd.Series(unique_dates.isin(korean_holiday_dates), index=unique_dates, name='is_holiday')
+            enhanced_controls['is_holiday'] = is_holiday.reindex(enhanced_controls.index).values
+            
+            # Create dummy variables for specific holiday periods
+            for holiday_name, dates in korean_holidays.items():
+                holiday_dates = pd.to_datetime(dates)
+                enhanced_controls[f'holiday_{holiday_name}'] = unique_dates.isin(holiday_dates).astype(int).reindex(enhanced_controls.index).values
+            
+        except Exception as e:
+            logger.warning(f"Error creating Korean holiday calendar: {str(e)}")
+            enhanced_controls['is_holiday'] = 0
+    
+    return enhanced_controls
+
 def main(config_path, export_csv=False, verbose=False):
     """
     Main function to run the full pipeline
@@ -106,7 +183,7 @@ def main(config_path, export_csv=False, verbose=False):
     if config.get('data', {}).get('filter_sparse_items', False):
         min_days = config.get('data', {}).get('min_days', 30)
         logger.info(f"Filtering sparse items (min_days={min_days})")
-        transactions_df, filtered_items = filter_sparse_items(
+        transactions_df = filter_sparse_items(
             transactions_df, 
             min_days=min_days
         )
@@ -139,88 +216,10 @@ def main(config_path, export_csv=False, verbose=False):
     logger.info(f"Saving pivot tables to {interim_path}")
     save_results(feature_set, interim_path)
     
-    # Create enhanced control variables for regression analyses - always at national level
-    # We already have basic control variables in the control_pivot
-    # But let's enhance them with more detailed calendar information
-    logger.info("Creating enhanced national-level control variables")
+    # Create enhanced control variables for regression analyses
+    use_korean_holidays = config.get('calendar', {}).get('use_korean_holidays', True)
+    control_vars = create_enhanced_controls(sales_pivot, control_pivot, use_korean_holidays)
     
-    # Extract unique dates from the pivot
-    unique_dates = sales_pivot.index.get_level_values('date').unique()
-    date_df = pd.DataFrame(index=unique_dates)
-    
-    # Add day of week
-    weekday_dummies = pd.get_dummies(pd.DatetimeIndex(unique_dates).weekday, prefix='weekday')
-    weekday_dummies.index = unique_dates
-    
-    # Add month indicators
-    month_dummies = pd.get_dummies(pd.DatetimeIndex(unique_dates).month, prefix='month')
-    month_dummies.index = unique_dates
-    
-    # Add quarter indicators
-    quarter_dummies = pd.get_dummies(pd.DatetimeIndex(unique_dates).quarter, prefix='quarter')
-    quarter_dummies.index = unique_dates
-    
-    # Add weekend indicator
-    is_weekend = pd.DatetimeIndex(unique_dates).weekday.isin([5, 6]).astype(int)
-    is_weekend = pd.Series(is_weekend, index=unique_dates, name='is_weekend')
-    
-    # Add Korean holidays
-    try:
-        # Define Korean holidays for the analysis period
-        korean_holidays = {
-            # Traditional Korean holidays (approximation - some are lunar calendar based)
-            "new_years_day": [f"{year}-01-01" for year in range(2023, 2026)],
-            "seollal": [date for year in range(2023, 2026) 
-                       for date in [f"{year}-02-01", f"{year}-02-02", f"{year}-02-03"]],  # Korean New Year
-            "independence_day": [f"{year}-03-01" for year in range(2023, 2026)],
-            "buddha_birthday": [f"{year}-05-08" for year in range(2023, 2026)],
-            "memorial_day": [f"{year}-06-06" for year in range(2023, 2026)],
-            "liberation_day": [f"{year}-08-15" for year in range(2023, 2026)],
-            "chuseok": [date for year in range(2023, 2026)
-                       for date in [f"{year}-09-28", f"{year}-09-29", f"{year}-09-30"]],  # Korean Thanksgiving
-            "national_foundation_day": [f"{year}-10-03" for year in range(2023, 2026)],
-            "hangul_day": [f"{year}-10-09" for year in range(2023, 2026)],
-            "christmas": [f"{year}-12-25" for year in range(2023, 2026)]
-        }
-        
-        # Flatten holiday list
-        korean_holiday_dates = []
-        for holiday_list in korean_holidays.values():
-            korean_holiday_dates.extend(holiday_list)
-        
-        # Convert to datetime
-        korean_holiday_dates = pd.to_datetime(korean_holiday_dates)
-        
-        # Create holiday indicators
-        is_holiday = pd.Series(unique_dates.isin(korean_holiday_dates), index=unique_dates, name='is_holiday')
-        
-        # Create dummy variables for specific holiday periods
-        holiday_dummies = pd.DataFrame(index=unique_dates)
-        for holiday_name, dates in korean_holidays.items():
-            holiday_dates = pd.to_datetime(dates)
-            holiday_dummies[f'holiday_{holiday_name}'] = unique_dates.isin(holiday_dates).astype(int)
-        
-    except Exception as e:
-        logger.warning(f"Error creating Korean holiday calendar: {str(e)}")
-        # If holiday calendar fails, create a default series
-        is_holiday = pd.Series(False, index=unique_dates, name='is_holiday')
-        holiday_dummies = pd.DataFrame(index=unique_dates)
-    
-    # Combine all calendar controls
-    calendar_controls = pd.concat([
-        weekday_dummies, 
-        month_dummies,
-        quarter_dummies,
-        is_weekend,
-        is_holiday,
-        holiday_dummies  # Add specific holiday dummies
-    ], axis=1)
-    
-    # Combine with existing controls
-    control_vars = control_pivot.copy()
-    for col in calendar_controls.columns:
-        control_vars[col] = calendar_controls.reindex(control_vars.index.get_level_values('date'))[col].values
-
     # Get substitution scope from config
     substitution_scope = config.get('analysis', {}).get('substitution_scope', "sub_category")
     

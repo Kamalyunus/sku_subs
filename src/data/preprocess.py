@@ -38,16 +38,12 @@ def validate_and_preprocess(df):
         logger.info("Converting date column to datetime")
         df['date'] = pd.to_datetime(df['date'])
     
-    # Add all time-based features at once
+    # Add essential time-based features
     logger.info("Adding time-based features")
-    df['year'] = df['date'].dt.year
-    df['month'] = df['date'].dt.month
-    df['day'] = df['date'].dt.day
     df['weekday'] = df['date'].dt.weekday
+    df['month'] = df['date'].dt.month
     df['is_weekend'] = df['weekday'].isin([5, 6]).astype(int)
-    df['week_of_year'] = df['date'].dt.isocalendar().week
     df['quarter'] = df['date'].dt.quarter
-    df['month_name'] = df['date'].dt.month_name()
     
     # Handle missing values
     logger.info("Handling missing values")
@@ -80,12 +76,13 @@ def validate_and_preprocess(df):
         # Remove negative sales
         df = df[df['sales'] >= 0]
     
-    # Check for extreme price changes (>100%)
-    logger.info("Checking for extreme price changes")
+    # Add price change percentage efficiently
+    logger.info("Calculating price change percentages")
     df_sorted = df.sort_values(['item_id', 'date'])
     df_sorted['prev_price'] = df_sorted.groupby(['item_id'])['price'].shift(1)
     df_sorted['price_change_pct'] = (df_sorted['price'] / df_sorted['prev_price'] - 1) * 100
     
+    # Identify extreme price changes
     extreme_changes = df_sorted[abs(df_sorted['price_change_pct']) > 100].dropna()
     if len(extreme_changes) > 0:
         logger.warning(f"Found {len(extreme_changes)} records with extreme price changes (>100%)")
@@ -95,9 +92,7 @@ def validate_and_preprocess(df):
             'sample': extreme_changes.head(5).to_dict(orient='records')
         }
     
-    # Add price features
-    logger.info("Adding price features")
-    # Retain the price change percentage as a feature
+    # Add the price change percentage to the main dataframe
     df['price_change_pct'] = df_sorted['price_change_pct']
     
     # Detect unusually high sales (outliers)
@@ -125,7 +120,7 @@ def validate_and_preprocess(df):
                     'sample': high_sales.head(3).to_dict(orient='records')
                 }
                 
-                # Mark outliers (optionally, could remove them)
+                # Mark outliers
                 outlier_idx = high_sales.index
                 df.loc[outlier_idx, 'is_sales_outlier'] = 1
     
@@ -143,21 +138,3 @@ def validate_and_preprocess(df):
     logger.info(f"Preprocessing complete. Found {len(anomalies)} types of anomalies.")
     logger.info(f"Returning {len(df)} records")
     return df, anomalies
-
-# Keep original function for backward compatibility, but use the new one internally
-def preprocess_transactions(df):
-    """
-    Preprocess transaction data
-    
-    Parameters:
-    -----------
-    df : DataFrame
-        Raw transaction data
-        
-    Returns:
-    --------
-    DataFrame
-        Preprocessed transaction data
-    """
-    df_processed, _ = validate_and_preprocess(df)
-    return df_processed

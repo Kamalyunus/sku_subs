@@ -6,7 +6,6 @@ data:
   attributes_file: "data/raw/product_attributes.csv"
   interim_dir: "data/interim/"
   results_dir: "data/results/"
-  processed_dir: "data/processed/"
   filter_sparse_items: true
   min_days: 30
 
@@ -15,8 +14,9 @@ analysis:
   min_oos_days: 5
   top_k: 5
   weights:
-    oos: 0.5
-    price: 0.5
+    oos: 0.33
+    price: 0.33
+    promo: 0.33
   require_significance: true
   substitution_scope: "category"  # Options: "category", "sub_category", "all"
   
@@ -26,25 +26,15 @@ price_analysis:
   min_baseline_periods: 7
   discount_threshold: 0.05
   
-# Elasticity analysis  
-elasticity:
-  min_data_points: 30
-  filter_oos_periods: true  # Filter periods where items are out of stock for elasticity calculation
-  
-# Validation
-validation:
-  significance_level: 0.05
-  include_oos_interactions: true  # Include interaction terms between price and OOS variables
-  
 # Visualization
 visualization:
   network_max_nodes: 50
   network_min_score: 0.1
-  include_elasticity_viz: true
   
 # Reporting
 reporting:
-  save_top_substitutes: true
   generate_visualizations: true
-  detailed_reports: true
-  include_elasticity: true
+
+# Calendar settings (optional)
+calendar:
+  use_korean_holidays: true

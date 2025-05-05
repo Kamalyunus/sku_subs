@@ -23,3 +23,13 @@ src/utils/__pycache__/helpers.cpython-312.pyc
 src/utils/__pycache__/validation.cpython-312.pyc
 src/visualization/__pycache__/price_effects.cpython-312.pyc
 src/visualization/__pycache__/substitution_network.cpython-312.pyc
+src/analysis/__pycache__/combined_score.cpython-312.pyc
+src/analysis/__pycache__/oos_analysis.cpython-312.pyc
+src/analysis/__pycache__/price_analysis.cpython-312.pyc
+src/data/__pycache__/create_features.cpython-312.pyc
+src/data/__pycache__/preprocess.cpython-312.pyc
+src/utils/__pycache__/helpers.cpython-312.pyc
+src/utils/__pycache__/validation.cpython-312.pyc
+src/visualization/__pycache__/price_effects.cpython-312.pyc
+src/visualization/__pycache__/report_figures.cpython-312.pyc
+src/visualization/__pycache__/substitution_network.cpython-312.pyc

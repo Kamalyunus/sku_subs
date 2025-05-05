@@ -121,7 +121,7 @@ def filter_sparse_items(transactions_df, min_days=30):
     logger.info(f"Filtered from {transactions_df['item_id'].nunique()} to {len(valid_items)} items")
     logger.info(f"Retained {len(filtered_df)/len(transactions_df):.1%} of transaction records")
     
-    return filtered_df, valid_items
+    return filtered_df
 
 def check_substitution_scope(item_a, item_b, product_attributes, substitution_scope="category"):
     """

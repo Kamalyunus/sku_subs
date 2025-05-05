@@ -210,26 +210,6 @@ def validate_substitution(sales_df, oos_df, price_df, promo_df,
         price_effect = model_log.params.get('log_price_a', 0) if 'log_price_a' in model_log.params else 0
         price_pvalue = model_log.pvalues.get('log_price_a', 1) if 'log_price_a' in model_log.pvalues else 1
         
-        # For OOS in log-log model, convert semi-elasticity to percentage effect
-        # The coefficient in a log-linear model gives the approximate percentage change
-        # For binary variables, the exact percentage change is (e^coefficient - 1) * 100
-        if 'oos_a' in model_log.params:
-            oos_log_coef = model_log.params.get('oos_a', 0)
-            oos_log_effect = (math.exp(oos_log_coef) - 1) 
-            oos_log_pvalue = model_log.pvalues.get('oos_a', 1)
-            # Store log model OOS effect for reference
-            results['oos_log_effect'] = oos_log_effect
-            results['oos_log_pvalue'] = oos_log_pvalue
-        
-        # For promo in log-log model
-        if 'promo_a' in model_log.params:
-            promo_log_coef = model_log.params.get('promo_a', 0)
-            promo_log_effect = (math.exp(promo_log_coef) - 1)
-            promo_log_pvalue = model_log.pvalues.get('promo_a', 1)
-            # Store log model promo effect for reference
-            results['promo_log_effect'] = promo_log_effect
-            results['promo_log_pvalue'] = promo_log_pvalue
-        
         # Calculate relative effects for the linear model
         mean_sales = analysis_df['sales_b'].mean()
         if mean_sales > 0:
