@@ -260,19 +260,11 @@ def main(config_path, export_csv=False, verbose=False):
     # Find top substitutes
     logger.info("Finding top substitutes with combined model results")
     
-    # Configure weights including promo weight
-    weights = {
-        'oos': config['analysis']['weights'].get('oos', 0.33),
-        'price': config['analysis']['weights'].get('price', 0.33),
-        'promo': config['analysis']['weights'].get('promo', 0.33)
-    }
-    
     # Use substitute finding with combined model results
     logger.info("Using substitute finding with combined model results")
     substitutes_dict, combined_matrix, _ = find_substitutes_with_validation(
         detailed_results,
         k=config['analysis']['top_k'],
-        weights=weights,
         require_significance=config['analysis']['require_significance'],
         product_attributes=attributes_df,
         substitution_scope=substitution_scope

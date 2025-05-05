@@ -2,39 +2,35 @@
 
 # Data settings
 data:
-  input_file: "data/raw/fresh_transactions.csv"
-  attributes_file: "data/raw/product_attributes.csv"
-  interim_dir: "data/interim/"
-  results_dir: "data/results/"
-  filter_sparse_items: true
-  min_days: 30
+  input_file: "data/raw/fresh_transactions.csv"    # Path to input transaction data
+  attributes_file: "data/raw/product_attributes.csv"    # Path to product attributes data
+  interim_dir: "data/interim/"    # Directory for intermediate files
+  results_dir: "data/results/"    # Directory for final results
+  filter_sparse_items: true    # Whether to remove items with insufficient data
+  min_days: 30    # Minimum number of days an item must appear in data
 
 # Analysis parameters
 analysis:
-  min_oos_days: 5
-  top_k: 5
-  weights:
-    oos: 0.33
-    price: 0.33
-    promo: 0.33
-  require_significance: true
-  substitution_scope: "category"  # Options: "category", "sub_category", "all"
+  min_oos_days: 5    # Minimum number of out-of-stock days required for analysis
+  top_k: 5    # Number of top substitutes to return for each item
+  require_significance: true    # Whether to require statistical significance
+  substitution_scope: "category"    # Scope for finding substitutes: "category", "sub_category", or "all"
   
 # Price analysis
 price_analysis:
-  baseline_window: 30
-  min_baseline_periods: 7
-  discount_threshold: 0.05
+  baseline_window: 30    # Window size for baseline price calculation
+  min_baseline_periods: 7    # Minimum periods required for baseline calculation
+  discount_threshold: 0.05    # Minimum discount percentage to consider significant
   
 # Visualization
 visualization:
-  network_max_nodes: 50
-  network_min_score: 0.1
+  network_max_nodes: 50    # Maximum number of nodes in network visualization
+  network_min_score: 0.1    # Minimum score for including in network visualization
   
 # Reporting
 reporting:
-  generate_visualizations: true
+  generate_visualizations: true    # Whether to generate visualization figures
 
-# Calendar settings (optional)
+# Calendar settings
 calendar:
-  use_korean_holidays: true
+  use_korean_holidays: true    # Whether to include Korean holidays in control variables
