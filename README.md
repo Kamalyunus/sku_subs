@@ -1,6 +1,6 @@
 # Minimized SKU Substitution Analysis
 
-This is a streamlined version of the SKU Substitution Analysis system, focusing on the core functionality of identifying product substitution relationships. The system uses out-of-stock (OOS) patterns, price effects, and promotion impact to find substitute products.
+This is a highly optimized version of the SKU Substitution Analysis system, focusing on the core functionality of identifying product substitution relationships. The system uses out-of-stock (OOS) patterns, price effects, and promotion impact to find substitute products with minimal code.
 
 ## Core Features
 
@@ -10,7 +10,7 @@ This is a streamlined version of the SKU Substitution Analysis system, focusing 
   - Promotion cannibalization effects
 - Uses statistical validation with control variables 
 - Runs two regression models (linear, log-log) to identify relationships
-- Exports results in both pickle and CSV formats
+- Exports results directly to CSV format
 
 ## Project Structure
 
@@ -19,9 +19,7 @@ This is a streamlined version of the SKU Substitution Analysis system, focusing 
   - `results/`: Analysis results
   - `generate_sample_data.py`: Script to generate sample data
 - `src/`: Source code
-  - `data/`: Data loading and preprocessing modules
-  - `analysis/`: Core analytical modules
-  - `utils/`: Utility functions
+  - `substitution_analysis.py`: Consolidated analysis module
 - `logs/`: Log files
 - `main.py`: Main pipeline script
 - `config.yaml`: Configuration parameters
@@ -53,13 +51,7 @@ Run the analysis pipeline with:
 python main.py --config config.yaml
 ```
 
-To export results to CSV format:
-
-```bash
-python main.py --config config.yaml --csv
-```
-
-To enable detailed logging:
+All analysis results are automatically exported to CSV format. To enable detailed logging:
 
 ```bash
 python main.py --config config.yaml --verbose
@@ -101,8 +93,28 @@ analysis:
 ## Results
 
 The system outputs:
-- Pickle file with detailed substitution results
-- CSV export with primary product, substitute product, and effect scores
+- CSV export (`substitutes.csv`) with the following columns:
+  - `primary_item`: The main product ID for which substitutes are being identified
+  - `substitute_item`: The potential substitute product ID 
+  - `combined_score`: Normalized overall substitution score (higher values indicate stronger substitution relationships)
+  - `oos_effect`: Relative increase in substitute item sales when the primary item is out of stock (range 0-5, where 0 means no effect and higher values indicate stronger substitution)
+  - `price_effect`: Cross-price elasticity coefficient from log-log model (positive values indicate substitutes; higher values mean stronger price sensitivity)
+  - `promo_effect`: Impact of primary item promotions on substitute item sales (negative values indicate cannibalization)
+  - `relationship_type`: Categorization of the relationship:
+      - "Substitute": When OOS or price effects are positive and statistically significant (p<0.05)
+      - "Complement": When price effects are negative or promotion effects are negative, and statistically significant
+      - "Undefined": When no effects meet the statistical significance threshold
+
+Only statistically significant effects (p<0.05) are included in the calculations, and all effects are capped at reasonable maximum values to prevent unrealistic outliers.
+
 - Logs with analysis summary and statistics
 
-This minimized version focuses on computational efficiency and core functionality, removing visualizations and unnecessary processing to deliver faster results with minimal code.
+## Architecture
+
+The code is highly optimized with minimal dependencies:
+- Single consolidated module (`substitution_analysis.py`) 
+- Statistical significance filtering (p < 0.05)
+- Only statistically valid effects are included
+- Streamlined processing without visualization overhead
+
+This architecture focuses on delivering accurate substitution relationships through a simplified codebase with just the essential functionality needed.
