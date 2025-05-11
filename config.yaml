@@ -1,10 +1,9 @@
-# Configuration file for Fresh SKU Substitution Analysis
+# Configuration file for Minimized SKU Substitution Analysis
 
 # Data settings
 data:
   input_file: "data/raw/fresh_transactions.csv"    # Path to input transaction data
-  attributes_file: "data/raw/product_attributes.csv"    # Path to product attributes data
-  interim_dir: "data/interim/"    # Directory for intermediate files
+  attributes_file: "data/raw/product_attributes.csv"    # Path to product attributes data (optional)
   results_dir: "data/results/"    # Directory for final results
   filter_sparse_items: true    # Whether to remove items with insufficient data
   min_days: 30    # Minimum number of days an item must appear in data
@@ -20,17 +19,3 @@ analysis:
 price_analysis:
   baseline_window: 30    # Window size for baseline price calculation
   min_baseline_periods: 7    # Minimum periods required for baseline calculation
-  discount_threshold: 0.05    # Minimum discount percentage to consider significant
-  
-# Visualization
-visualization:
-  network_max_nodes: 50    # Maximum number of nodes in network visualization
-  network_min_score: 0.1    # Minimum score for including in network visualization
-  
-# Reporting
-reporting:
-  generate_visualizations: true    # Whether to generate visualization figures
-
-# Calendar settings
-calendar:
-  use_korean_holidays: true    # Whether to include Korean holidays in control variables
