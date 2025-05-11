@@ -17,11 +17,14 @@ This is a highly optimized version of the SKU Substitution Analysis system, focu
 - `data/`: Data storage directory
   - `raw/`: Raw transaction and product data
   - `results/`: Analysis results
+    - `figures/`: Visualization output (generated when using visualize_sku_pair.py)
   - `generate_sample_data.py`: Script to generate sample data
 - `src/`: Source code
   - `substitution_analysis.py`: Consolidated analysis module
+  - `visualize_relationship.py`: Visualization functions
 - `logs/`: Log files
 - `main.py`: Main pipeline script
+- `visualize_sku_pair.py`: SKU pair visualization tool
 - `config.yaml`: Configuration parameters
 
 ## Installation
@@ -109,12 +112,34 @@ Only statistically significant effects (p<0.05) are included in the calculations
 
 - Logs with analysis summary and statistics
 
+## Visualization
+
+The system includes a minimal visualization tool for analyzing specific SKU pairs:
+
+```bash
+python visualize_sku_pair.py --item-a ITEM001 --item-b ITEM002
+```
+
+This creates three plots showing the relationship between the two products:
+1. **OOS Relationship**: Shows sales of item A with out-of-stock periods of item B highlighted
+2. **Price Relationship**: Shows sales of item A compared to price changes of item B
+3. **Promotion Relationship**: Shows sales of item A with promotion periods of item B highlighted
+
+Visualizations are saved to `data/results/figures/` by default.
+
+Optional arguments:
+- `--config CONFIG_PATH`: Specify an alternative config file
+- `--output-dir OUTPUT_DIR`: Specify where to save visualizations
+- `--verbose`: Enable detailed logging
+
+The visualization component is optional and requires matplotlib (`pip install matplotlib`).
+
 ## Architecture
 
 The code is highly optimized with minimal dependencies:
 - Single consolidated module (`substitution_analysis.py`) 
 - Statistical significance filtering (p < 0.05)
 - Only statistically valid effects are included
-- Streamlined processing without visualization overhead
+- Streamlined processing with optional visualization tools
 
-This architecture focuses on delivering accurate substitution relationships through a simplified codebase with just the essential functionality needed.
+This architecture focuses on delivering accurate substitution relationships through a simplified codebase with essential functionality and visualization only when needed.

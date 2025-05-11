@@ -14,6 +14,14 @@ import logging
 import yaml
 from datetime import datetime
 
+# Visualization imports (only used if visualization is requested)
+try:
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    VISUALIZATION_AVAILABLE = True
+except ImportError:
+    VISUALIZATION_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
 
 # ---- Data Loading and Processing ----
@@ -1025,3 +1033,35 @@ def run_substitution_analysis(config_path, export_csv=True, verbose=False):
     print(summary)
     
     return substitutes_dict
+
+def visualize_sku_relationship(transactions_df, item_a, item_b, output_dir=None):
+    """
+    Wrapper for visualization function (imported from visualize_relationship)
+    
+    Parameters:
+    -----------
+    transactions_df : DataFrame
+        Preprocessed transaction data
+    item_a : str
+        Primary item ID
+    item_b : str
+        Secondary item (potential substitute) ID
+    output_dir : str
+        Directory to save visualization files
+        
+    Returns:
+    --------
+    tuple
+        (success_flag, list_of_created_files)
+    """
+    if not VISUALIZATION_AVAILABLE:
+        print("Visualization requires matplotlib. Please install with: pip install matplotlib")
+        return False, []
+    
+    if output_dir is None:
+        output_dir = 'data/results/figures'
+    
+    # Import visualization function locally to avoid mandatory dependency
+    from src.visualize_relationship import visualize_sku_relationship as _visualize
+    
+    return _visualize(transactions_df, item_a, item_b, output_dir)
