@@ -131,6 +131,61 @@ def load_product_attributes(filepath):
         logger.error(f"Error loading product attributes: {str(e)}")
         raise
 
+def load_sku_embeddings(filepath):
+    """
+    Load SKU embeddings from a CSV file.
+
+    The function reads a CSV file expected to contain 'item_id' and 'embedding' columns.
+    The 'embedding' column should have comma-separated string representations of float values
+    that constitute the embedding vector for each item.
+
+    Parameters:
+    -----------
+    filepath : str
+        Path to the SKU embeddings CSV file.
+
+    Returns:
+    --------
+    dict
+        A dictionary mapping each `item_id` (str) to its corresponding embedding
+        vector (list of floats).
+        Returns an empty dictionary if the file is not found, if essential columns
+        are missing, or if other critical errors occur during parsing. Individual
+        rows with parsing errors for the embedding string will be skipped, and an
+        error will be logged.
+    """
+    logger.info(f"Loading SKU embeddings from {filepath}")
+    embeddings = {}
+    try:
+        df = pd.read_csv(filepath)
+        if 'item_id' not in df.columns or 'embedding' not in df.columns:
+            logger.error("SKU embeddings file must contain 'item_id' and 'embedding' columns")
+            raise ValueError("Missing required columns in SKU embeddings file")
+
+        for _, row in df.iterrows():
+            item_id = row['item_id']
+            try:
+                embedding_str = row['embedding']
+                embedding_vector = [float(val.strip()) for val in embedding_str.split(',')]
+                embeddings[item_id] = embedding_vector
+            except ValueError as ve:
+                logger.error(f"Error parsing embedding for item_id {item_id}: {ve}. Skipping this item.")
+            except Exception as e:
+                logger.error(f"An unexpected error occurred parsing embedding for item_id {item_id}: {e}. Skipping this item.")
+        
+        logger.info(f"Loaded embeddings for {len(embeddings)} SKUs")
+        return embeddings
+
+    except FileNotFoundError:
+        logger.error(f"SKU embeddings file not found: {filepath}")
+        return {}
+    except ValueError as ve: # Catches missing columns error from above
+        logger.error(f"ValueError loading SKU embeddings: {str(ve)}")
+        return {}
+    except Exception as e:
+        logger.error(f"Error loading SKU embeddings from {filepath}: {str(e)}")
+        return {}
+
 def validate_and_preprocess(df):
     """
     Validate, preprocess, and detect anomalies in transaction data
@@ -329,6 +384,66 @@ def create_control_variables(sales_pivot, control_pivot):
             enhanced_controls[col] = quarter_dummies[col].reindex(enhanced_controls.index).values
     
     return enhanced_controls
+
+def calculate_embedding_similarity(embedding1, embedding2):
+    """
+    Calculate cosine similarity between two embedding vectors.
+
+    Cosine similarity measures the cosine of the angle between two non-zero vectors,
+    providing a measure of their orientation similarity. A value of 1 means the vectors
+    are identical in orientation, 0 means they are orthogonal, and -1 means they are
+    diametrically opposed.
+
+    Parameters:
+    -----------
+    embedding1 : list or np.ndarray
+        The first embedding vector. Should be a list or NumPy array of numerical values.
+    embedding2 : list or np.ndarray
+        The second embedding vector. Should be a list or NumPy array of numerical values.
+
+    Returns:
+    --------
+    float
+        The cosine similarity score, ranging from -1.0 to 1.0.
+        Returns 0.0 if inputs are invalid (e.g., None, empty, non-numeric,
+        mismatched dimensions, or zero-norm vectors), with a warning logged.
+    """
+    # Validate inputs
+    if embedding1 is None or embedding2 is None:
+        logger.warning("calculate_embedding_similarity: One or both embeddings are None.")
+        return 0.0
+    if not isinstance(embedding1, (list, np.ndarray)) or not isinstance(embedding2, (list, np.ndarray)):
+        logger.warning("calculate_embedding_similarity: Embeddings must be lists or numpy arrays.")
+        return 0.0
+    if len(embedding1) == 0 or len(embedding2) == 0:
+        logger.warning("calculate_embedding_similarity: One or both embeddings are empty.")
+        return 0.0
+
+    # Convert to numpy arrays
+    emb1_np = np.array(embedding1, dtype=float)
+    emb2_np = np.array(embedding2, dtype=float)
+
+    if emb1_np.shape != emb2_np.shape:
+        logger.warning(f"calculate_embedding_similarity: Embedding dimensions do not match: "
+                       f"{emb1_np.shape} vs {emb2_np.shape}")
+        return 0.0
+
+    # Calculate norms
+    norm1 = np.linalg.norm(emb1_np)
+    norm2 = np.linalg.norm(emb2_np)
+
+    if norm1 == 0.0 or norm2 == 0.0:
+        logger.warning("calculate_embedding_similarity: One or both embeddings have zero norm.")
+        return 0.0
+
+    # Calculate cosine similarity
+    dot_product = np.dot(emb1_np, emb2_np)
+    similarity = dot_product / (norm1 * norm2)
+    
+    # Ensure similarity is within expected bounds due to potential floating point inaccuracies
+    similarity = np.clip(similarity, -1.0, 1.0)
+
+    return float(similarity)
 
 # ---- Substitution Analysis ----
 
@@ -631,7 +746,7 @@ def add_relationship_type(result):
     return result
 
 def calculate_substitution_effects(sales_df, oos_df, price_df, promo_df, items_list, 
-                                  min_oos_days=5, control_vars=None, product_attributes=None, 
+                                  min_oos_days=5, control_vars=None, product_attributes=None,
                                   substitution_scope="category"):
     """
     Calculate substitution effects using linear and log-log models
@@ -708,18 +823,39 @@ def calculate_substitution_effects(sales_df, oos_df, price_df, promo_df, items_l
     logger.info(f"Substitution analysis complete")
     return detailed_results
 
-def find_substitutes(detailed_results, k=5, require_significance=True):
+def find_substitutes(detailed_results, sku_embeddings, embedding_weight, k=5, require_significance=True):
     """
-    Identify top substitutes using combined model results
+    Identify top substitutes using combined model results, incorporating statistical
+    effects and optional SKU embedding similarity.
+
+    The function calculates a `combined_score` for each potential substitute pair.
+    This score is a weighted average of a `normalized_statistical_score` (derived
+    from OOS, price, and promo effects) and a `scaled_embedding_similarity_score`.
+    The `embedding_weight` parameter controls the influence of embedding similarity
+    on the final score.
     
     Parameters:
     -----------
     detailed_results : dict
-        Detailed results from calculate_substitution_effects
-    k : int
-        Number of top substitutes to return for each item
-    require_significance : bool
-        If True, require at least one significant effect
+        A nested dictionary where `detailed_results[item_a][item_b]` contains
+        statistical validation results for item_b as a substitute for item_a.
+    sku_embeddings : dict
+        A dictionary mapping `item_id` to its embedding vector (list of floats).
+        Can be empty if no embeddings are available.
+    embedding_weight : float
+        The weight (0.0 to 1.0) assigned to the embedding similarity score.
+        - 0.0 means the score is based solely on statistical effects.
+        - 1.0 means the score is based solely on embedding similarity (if available).
+        - Values in between blend the two scores.
+    k : int, optional
+        The number of top substitutes to return for each item (default is 5).
+    require_significance : bool, optional
+        If True (default), statistical effects (OOS, price, promo) must be
+        significant to contribute to the statistical part of the score. If no
+        statistical effects are significant for a pair, their statistical score
+        contribution will be zero. If False, raw effect values are used regardless
+        of significance. This also affects the combined score: if True and no
+        statistical significance, the combined score becomes 0 unless embedding_weight is 1.0.
         
     Returns:
     --------
@@ -738,14 +874,25 @@ def find_substitutes(detailed_results, k=5, require_significance=True):
     MAX_OOS_EFFECT = 5.0
     MAX_PRICE_EFFECT = 3.0
     MAX_PROMO_EFFECT = 3.0
-    
+
+    # Placeholder for embedding similarity - to be implemented later
+    # For now, we just acknowledge the presence of sku_embeddings
+    if sku_embeddings:
+        logger.info(f"SKU embeddings received by find_substitutes: {len(sku_embeddings)} items, with weight: {embedding_weight}")
+    else:
+        logger.info("No SKU embeddings received by find_substitutes.")
+
+    # Define max theoretical statistical score based on capped effects
+    max_stat_score = MAX_OOS_EFFECT + MAX_PRICE_EFFECT + MAX_PROMO_EFFECT
+
     # Process each item pair
     for item_a in items_list:
         for item_b in detailed_results.get(item_a, {}):
-            result = detailed_results[item_a][item_b]
+            result = detailed_results[item_a][item_b] # This is a dictionary
             
             # Skip if validation was not successful
             if not result.get('validation_successful', False):
+                combined_scores.loc[item_a, item_b] = 0.0
                 continue
             
             # Get effect values with capping
@@ -757,21 +904,58 @@ def find_substitutes(detailed_results, k=5, require_significance=True):
             sig_count = sum([
                 1 if result.get('oos_significant', False) and oos_effect > 0 else 0,
                 1 if result.get('price_significant', False) and price_effect > 0 else 0,
-                1 if result.get('promo_significant', False) and promo_effect < 0 else 0
+                1 if result.get('promo_significant', False) and promo_effect < 0 else 0 # promo_effect is positive here due to abs()
             ])
             
-            # Skip if require_significance is True and no significant effects
+            # If require_significance is True and no significant effects, score is 0
             if require_significance and sig_count == 0:
+                combined_scores.loc[item_a, item_b] = 0.0
+                # Add similarity info to result dict for later inspection if needed
+                result['embedding_similarity_score'] = 0.0 
+                result['scaled_embedding_similarity_score'] = 0.0
                 continue
+
+            # Calculate statistical score contribution
+            statistical_score_contribution = oos_effect + price_effect + promo_effect # promo_effect is already abs()
             
-            # Calculate combined score with equal weights
-            if sig_count > 0:
-                # Normalize to give equal weight to each significant dimension
-                weight = 1.0 / sig_count
-                score = weight * (oos_effect + price_effect + abs(promo_effect))
-                
-                # Store the score
-                combined_scores.loc[item_a, item_b] = score
+            # Normalize statistical score
+            normalized_statistical_score = 0.0
+            if max_stat_score > 0:
+                normalized_statistical_score = statistical_score_contribution / max_stat_score
+            else: # Should not happen if MAX constants are > 0
+                normalized_statistical_score = 0.0 if statistical_score_contribution == 0 else 1.0
+
+
+            # Calculate embedding similarity
+            scaled_similarity_score = 0.0
+            raw_similarity_score = 0.0
+            embedding_a = sku_embeddings.get(item_a)
+            embedding_b = sku_embeddings.get(item_b)
+
+            if embedding_a and embedding_b: # Check if lists are not empty
+                raw_similarity_score = calculate_embedding_similarity(embedding_a, embedding_b)
+                scaled_similarity_score = (raw_similarity_score + 1.0) / 2.0
+            
+            # Store similarity scores in the result dictionary for transparency
+            result['embedding_similarity_score'] = raw_similarity_score
+            result['scaled_embedding_similarity_score'] = scaled_similarity_score
+
+            # Calculate new combined score
+            if require_significance and sig_count == 0:
+                # If significance is required and there are no significant stat effects,
+                # the score is 0 unless embedding_weight is 1.0 (only similarity matters).
+                if abs(embedding_weight - 1.0) < 1e-9: # Check for embedding_weight == 1.0
+                    new_combined_score = scaled_similarity_score
+                else:
+                    new_combined_score = 0.0
+            else:
+                # If significance is not required, or it is required and met (sig_count > 0),
+                # or if embedding_weight is 1.0 (stat score doesn't matter if not required and 0),
+                # calculate combined score using the weighted average.
+                new_combined_score = ((1.0 - embedding_weight) * normalized_statistical_score) + \
+                                     (embedding_weight * scaled_similarity_score)
+            
+            combined_scores.loc[item_a, item_b] = new_combined_score
     
     # Create substitutes dictionary
     substitutes_dict = {}
@@ -930,7 +1114,26 @@ def run_substitution_analysis(config_path, export_csv=True, verbose=False):
     except FileNotFoundError:
         logger.warning("Product attributes file not found, continuing without attributes")
         attributes_df = None
-    
+    except Exception as e: # Catch other potential errors from load_product_attributes
+        logger.error(f"Error loading product attributes: {e}. Continuing without attributes.")
+        attributes_df = None
+
+    # Load SKU embeddings (optional, for incorporating similarity into scoring)
+    sku_embeddings = {}
+    embedding_file_path = config.get('data', {}).get('embedding_file')
+
+    if embedding_file_path:
+        logger.info(f"Attempting to load SKU embeddings from: {embedding_file_path}")
+        try:
+            sku_embeddings = load_sku_embeddings(embedding_file_path)
+            if not sku_embeddings: # Handles case where file is empty or all rows fail parsing
+                logger.warning(f"SKU embeddings file {embedding_file_path} loaded but resulted in empty embeddings. Continuing without embeddings.")
+        except Exception as e: # Catch any other exception from load_sku_embeddings (e.g. file not found if not handled internally)
+            logger.error(f"Failed to load SKU embeddings from {embedding_file_path}: {e}. Continuing without embeddings.")
+            sku_embeddings = {} # Ensure it's an empty dict on failure
+    else:
+        logger.info("No SKU embedding file specified in config. Continuing without SKU embeddings.")
+
     # Run preprocessing
     logger.info("Running preprocessing and validation")
     transactions_df, anomalies = validate_and_preprocess(raw_transactions_df)
@@ -987,10 +1190,23 @@ def run_substitution_analysis(config_path, export_csv=True, verbose=False):
         substitution_scope=substitution_scope
     )
     
-    # Find top substitutes
+    # Find top substitutes, potentially using embedding similarity
     logger.info("Finding top substitutes")
+    # Retrieve embedding_weight from config, defaulting to 0.0 if not specified or invalid type
+    try:
+        embedding_weight_val = float(config.get('analysis', {}).get('embedding_weight', 0.0))
+    except ValueError:
+        logger.warning(f"Invalid value for embedding_weight in config. Defaulting to 0.0.")
+        embedding_weight_val = 0.0
+        
+    if not (0.0 <= embedding_weight_val <= 1.0):
+        logger.warning(f"embedding_weight {embedding_weight_val} is outside valid range [0,1]. Clipping to be within this range.")
+        embedding_weight_val = max(0.0, min(1.0, embedding_weight_val))
+
     substitutes_dict = find_substitutes(
         detailed_results,
+        sku_embeddings=sku_embeddings,
+        embedding_weight=embedding_weight_val, 
         k=config['analysis']['top_k'],
         require_significance=config['analysis']['require_significance']
     )

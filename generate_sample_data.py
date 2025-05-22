@@ -21,7 +21,9 @@ def generate_sample_data(
     out_of_stock_events=True,
     price_changes=True,
     promotions=True,
-    random_seed=42
+    random_seed=42,
+    embedding_dim=10,
+    embeddings_output_file="product_embeddings.csv"
 ):
     """
     Generate sample transaction data for substitution analysis
@@ -324,6 +326,20 @@ def generate_sample_data(
     print(f"Transaction data saved to: {transactions_file}")
     print(f"Product attributes saved to: {attributes_file}")
 
+    # Generate product embeddings
+    print("Generating product embeddings...")
+    embedding_data_list = []
+    for item_id in product_data.keys():
+        embedding_vector = np.random.uniform(-1, 1, embedding_dim)
+        embedding_string = ','.join(map(str, embedding_vector))
+        embedding_data_list.append({'item_id': item_id, 'embedding': embedding_string})
+
+    embeddings_df = pd.DataFrame(embedding_data_list)
+    embeddings_path = os.path.join("data", output_dir, embeddings_output_file)
+    embeddings_df.to_csv(embeddings_path, index=False)
+    print(f"Sample product embeddings data saved to {embeddings_path}")
+
+
 if __name__ == "__main__":
     import argparse
     
@@ -333,6 +349,8 @@ if __name__ == "__main__":
     parser.add_argument("--days", type=int, default=365, help="Number of days to generate")
     parser.add_argument("--products", type=int, default=100, help="Number of products")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--embedding-dim", type=int, default=10, help="Dimension of product embeddings")
+    parser.add_argument("--embeddings-output-file", default="product_embeddings.csv", help="Name for the embeddings CSV file")
     
     args = parser.parse_args()
     
@@ -341,5 +359,7 @@ if __name__ == "__main__":
         start_date=args.start_date,
         days=args.days,
         products=args.products,
-        random_seed=args.seed
+        random_seed=args.seed,
+        embedding_dim=args.embedding_dim,
+        embeddings_output_file=args.embeddings_output_file
     )

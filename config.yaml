@@ -7,13 +7,22 @@ data:
   results_dir: "data/results/"    # Directory for final results
   filter_sparse_items: true    # Whether to remove items with insufficient data
   min_days: 30    # Minimum number of days an item must appear in data
+  embedding_file: "data/raw/product_embeddings.csv"    # Path to product embeddings data (optional).
+                                                     # Expected CSV format: 'item_id' (string), 'embedding' (comma-separated string of floats).
+                                                     # If not provided or file not found, embedding similarity will not be used.
 
 # Analysis parameters
 analysis:
   min_oos_days: 5    # Minimum number of out-of-stock days required for analysis
   top_k: 5    # Number of top substitutes to return for each item
-  require_significance: true    # Whether to require statistical significance
+  require_significance: true    # Whether to require statistical significance for effects (OOS, Price, Promo) to be considered.
+                               # If True and no stat effects are significant, the statistical part of the score is 0.
+                               # If False, raw effect values are used even if not statistically significant.
   substitution_scope: "category"    # Scope for finding substitutes: "category", "sub_category", or "all"
+  embedding_weight: 0.2    # Weight for embedding similarity in substitution score (0.0 to 1.0).
+                           # 0.0 means only statistical effects are used.
+                           # 1.0 means only embedding similarity is used (if available).
+                           # Values in between blend the two types of scores.
   
 # Price analysis
 price_analysis:
